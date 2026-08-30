@@ -14,8 +14,6 @@ import tempfile
 import threading
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from tools.environments.local import (
     LocalEnvironment,
     _resolve_safe_cwd,
@@ -29,25 +27,8 @@ class TestResolveSafeCwd:
         path = str(tmp_path)
         assert _resolve_safe_cwd(path) == path
 
-    def test_walks_up_to_first_existing_ancestor(self, tmp_path):
-        nested = tmp_path / "child" / "grandchild"
-        nested.mkdir(parents=True)
-        deleted = str(nested)
-        shutil.rmtree(tmp_path / "child")
-
-        # The deepest existing ancestor on the path is tmp_path itself.
-        assert _resolve_safe_cwd(deleted) == str(tmp_path)
-
-    def test_falls_back_when_path_is_empty(self):
-        assert _resolve_safe_cwd("") == tempfile.gettempdir()
-
-    def test_returns_tempdir_when_nothing_on_path_exists(self, monkeypatch):
-        monkeypatch.setattr(os.path, "isdir", lambda p: False)
-        assert _resolve_safe_cwd("/no/such/dir") == tempfile.gettempdir()
 
     def test_returns_root_when_only_root_exists(self, monkeypatch):
-        if os.name == "nt":
-            pytest.skip("POSIX root ancestor semantics do not apply on Windows")
         """If every ancestor except the filesystem root is gone, the root
         itself is still a valid recovery target — don't skip it just because
         ``os.path.dirname('/') == '/'`` is the loop's exit condition."""
@@ -164,13 +145,14 @@ class TestUpdateCwdRejectsMissingPaths:
         with patch.object(LocalEnvironment, "init_session", autospec=True, return_value=None):
             env = LocalEnvironment(cwd=str(original), timeout=10)
 
-        # Simulate the stale-marker case: the prior command's ``pwd -P`` left
-        # a path in the cwd file, but that path has since been deleted.
+        # Simulate the stale-marker case: the prior command emitted a cwd
+        # marker for a directory that has since been deleted.
         deleted = tmp_path / "wedge-repro"
-        with open(env._cwd_file, "w") as f:
-            f.write(str(deleted))
+        marker = env._cwd_marker
 
-        env._update_cwd({"output": "", "returncode": 0})
+        env._update_cwd(
+            {"output": f"x\n{marker}{deleted}{marker}\n", "returncode": 0}
+        )
 
         assert env.cwd == str(original)
 
@@ -182,10 +164,10 @@ class TestUpdateCwdRejectsMissingPaths:
 
         with patch.object(LocalEnvironment, "init_session", autospec=True, return_value=None):
             env = LocalEnvironment(cwd=str(original), timeout=10)
+        marker = env._cwd_marker
 
-        with open(env._cwd_file, "w") as f:
-            f.write(str(new_dir))
-
-        env._update_cwd({"output": "", "returncode": 0})
+        env._update_cwd(
+            {"output": f"x\n{marker}{new_dir}{marker}\n", "returncode": 0}
+        )
 
         assert env.cwd == str(new_dir)

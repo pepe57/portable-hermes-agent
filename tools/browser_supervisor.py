@@ -26,10 +26,14 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-import websockets
-from websockets.asyncio.client import ClientConnection
+# ``websockets`` costs ~22 ms at import and is only needed when a supervisor
+# actually connects to a CDP endpoint (``_connect_ws``). With
+# ``from __future__ import annotations`` in force the ``ClientConnection``
+# annotation is string-only, so the type import stays under TYPE_CHECKING.
+if TYPE_CHECKING:
+    from websockets.asyncio.client import ClientConnection
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +55,13 @@ def _redact_cdp_error_text(exc: object) -> str:
         return redact_cdp_url(str(exc))
     except Exception:
         return "<error redacted>"
+
+
+def _redact_supervisor_text(value: str) -> str:
+    """Redact page-originated text before exposing supervisor snapshots."""
+    from agent.redact import redact_sensitive_text
+
+    return redact_sensitive_text(value, force=True)
 
 
 # ── Config defaults ───────────────────────────────────────────────────────────
@@ -166,8 +177,8 @@ class PendingDialog:
         return {
             "id": self.id,
             "type": self.type,
-            "message": self.message,
-            "default_prompt": self.default_prompt,
+            "message": _redact_supervisor_text(self.message),
+            "default_prompt": _redact_supervisor_text(self.default_prompt),
             "opened_at": self.opened_at,
             "frame_id": self.frame_id,
         }
@@ -194,7 +205,7 @@ class DialogRecord:
         return {
             "id": self.id,
             "type": self.type,
-            "message": self.message,
+            "message": _redact_supervisor_text(self.message),
             "opened_at": self.opened_at,
             "closed_at": self.closed_at,
             "closed_by": self.closed_by,
@@ -642,6 +653,7 @@ class CDPSupervisor:
         attempt = 0
         last_success_at = 0.0
         backoff = 0.5
+        import websockets  # deferred: only supervisors that connect pay the import
         while not self._stop_requested:
             try:
                 self._ws = await asyncio.wait_for(

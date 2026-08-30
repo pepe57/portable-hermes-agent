@@ -19,18 +19,16 @@ def test_create_tool_writes_to_hermes_home_custom_tools():
 
     tool_maker.registry._tools.pop(name, None)
     result = json.loads(
-        tool_maker.create_tool_handler(
-            {
-                "name": name,
-                "description": "Echo a test value",
-                "mode": "code",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"value": {"type": "string"}},
-                },
-                "code": "result = {'value': args.get('value')}",
-            }
-        )
+        tool_maker.create_tool_handler({
+            "name": name,
+            "description": "Echo a test value",
+            "mode": "code",
+            "parameters": {
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+            "code": "result = {'value': args.get('value')}",
+        })
     )
 
     try:
@@ -61,17 +59,15 @@ def test_legacy_source_tree_custom_tools_migrate_to_runtime(tmp_path, monkeypatc
     legacy_source = "LEGACY_MARKER = True\n"
     (legacy_dir / "legacy_echo.py").write_text(legacy_source, encoding="utf-8")
     (legacy_dir / "manifest.json").write_text(
-        json.dumps(
-            {
-                "tools": {
-                    "legacy_echo": {
-                        "mode": "code",
-                        "file": "legacy_echo.py",
-                        "description": "old custom tool",
-                    }
+        json.dumps({
+            "tools": {
+                "legacy_echo": {
+                    "mode": "code",
+                    "file": "legacy_echo.py",
+                    "description": "old custom tool",
                 }
             }
-        ),
+        }),
         encoding="utf-8",
     )
 

@@ -880,30 +880,73 @@ UNLOAD_SCHEMA = {
     },
 }
 
-_ALL_SCHEMAS = [
-    STATUS_SCHEMA, MODELS_SCHEMA, LOAD_SCHEMA, UNLOAD_SCHEMA,
-    SEARCH_SCHEMA, DOWNLOAD_SCHEMA, MODEL_INFO_SCHEMA, TOKENIZE_SCHEMA,
-    EMBED_SCHEMA, CHAT_SCHEMA,
-]
-
-_ALL_HANDLERS = {
-    "lm_studio_status": lm_studio_status_handler,
-    "lm_studio_models": lm_studio_models_handler,
-    "lm_studio_load": lm_studio_load_handler,
-    "lm_studio_unload": lm_studio_unload_handler,
-    "lm_studio_search": lm_studio_search_handler,
-    "lm_studio_download": lm_studio_download_handler,
-    "lm_studio_model_info": lm_studio_model_info_handler,
-    "lm_studio_tokenize": lm_studio_tokenize_handler,
-    "lm_studio_embed": lm_studio_embed_handler,
-    "lm_studio_chat": lm_studio_chat_handler,
-}
-
-for schema in _ALL_SCHEMAS:
-    registry.register(
-        name=schema["name"],
-        toolset="lm_studio",
-        schema=schema,
-        handler=_ALL_HANDLERS[schema["name"]],
-        check_fn=_check_lm_studio,
-    )
+registry.register(
+    name="lm_studio_status",
+    toolset="lm_studio",
+    schema=STATUS_SCHEMA,
+    handler=lm_studio_status_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_models",
+    toolset="lm_studio",
+    schema=MODELS_SCHEMA,
+    handler=lm_studio_models_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_load",
+    toolset="lm_studio",
+    schema=LOAD_SCHEMA,
+    handler=lm_studio_load_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_unload",
+    toolset="lm_studio",
+    schema=UNLOAD_SCHEMA,
+    handler=lm_studio_unload_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_search",
+    toolset="lm_studio",
+    schema=SEARCH_SCHEMA,
+    handler=lm_studio_search_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_download",
+    toolset="lm_studio",
+    schema=DOWNLOAD_SCHEMA,
+    handler=lm_studio_download_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_model_info",
+    toolset="lm_studio",
+    schema=MODEL_INFO_SCHEMA,
+    handler=lm_studio_model_info_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_tokenize",
+    toolset="lm_studio",
+    schema=TOKENIZE_SCHEMA,
+    handler=lm_studio_tokenize_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_embed",
+    toolset="lm_studio",
+    schema=EMBED_SCHEMA,
+    handler=lm_studio_embed_handler,
+    check_fn=_check_lm_studio,
+)
+registry.register(
+    name="lm_studio_chat",
+    toolset="lm_studio",
+    schema=CHAT_SCHEMA,
+    handler=lm_studio_chat_handler,
+    check_fn=_check_lm_studio,
+)

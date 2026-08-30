@@ -1,5 +1,8 @@
-import build_release
 import subprocess
+import sys
+from pathlib import Path
+
+import build_release
 
 
 def test_release_zip_includes_user_launchers_and_docs():
@@ -7,6 +10,28 @@ def test_release_zip_includes_user_launchers_and_docs():
     assert build_release.should_exclude("UPDATE.bat") is False
     assert build_release.should_exclude("START_HERE.txt") is False
     assert build_release.should_exclude("README.md") is False
+
+
+def test_release_tag_produces_the_expected_asset_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["build_release.py", "--version", "v9.8.7", "--output-dir", str(tmp_path)],
+    )
+    monkeypatch.setattr(build_release, "iter_release_files", lambda: iter(()))
+
+    build_release.main()
+
+    assert (tmp_path / "portable-hermes-agent-v9.8.7.zip").is_file()
+
+
+def test_readme_download_links_target_the_portable_release_page():
+    content = (Path(build_release.PROJECT_ROOT) / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "https://github.com/aivrar/portable-hermes-agent/releases/latest" in content
+    assert "NousResearch/hermes-agent/releases" not in content
 
 
 def test_release_zip_excludes_development_only_dirs():
@@ -37,19 +62,15 @@ def test_release_zip_excludes_generated_docs_but_keeps_runtime_assets():
         )
         is True
     )
-
-    # Preserve non-doc localization resources used by the website build.
     assert (
         build_release.should_exclude(
             "website/i18n/zh-Hans/docusaurus-theme-classic/navbar.json"
         )
         is False
     )
-
-    # The portable updater seeds its model cache from this tracked manifest.
-    assert build_release.should_exclude("website/static/api/model-catalog.json") is False
-
-    # Preserve the actual optional skill; only its generated website copy is removed.
+    assert (
+        build_release.should_exclude("website/static/api/model-catalog.json") is False
+    )
     assert (
         build_release.should_exclude(
             "optional-skills/autonomous-ai-agents/blackbox/SKILL.md"

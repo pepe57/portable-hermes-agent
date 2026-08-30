@@ -24,7 +24,6 @@ from tools.environments.base import (
 from tools.environments.file_sync import (
     FileSyncManager,
     iter_sync_files,
-    remote_parent_dir,
     quoted_mkdir_command,
     quoted_rm_command,
     unique_parent_dirs,
@@ -297,7 +296,7 @@ class ModalEnvironment(BaseEnvironment):
         """Upload a single file via base64 piped through stdin."""
         content = Path(host_path).read_bytes()
         b64 = base64.b64encode(content).decode("ascii")
-        container_dir = remote_parent_dir(remote_path)
+        container_dir = str(Path(remote_path).parent)
         cmd = (
             f"mkdir -p {shlex.quote(container_dir)} && "
             f"base64 -d > {shlex.quote(remote_path)}"

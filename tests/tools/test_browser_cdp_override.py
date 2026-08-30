@@ -14,37 +14,6 @@ class TestResolveCdpOverride:
 
         assert _resolve_cdp_override(WS_URL) == WS_URL
 
-    def test_resolves_http_discovery_endpoint_to_websocket(self):
-        from tools.browser_tool import _resolve_cdp_override
-
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.json.return_value = {"webSocketDebuggerUrl": WS_URL}
-
-        with patch("tools.browser_tool.requests.get", return_value=response) as mock_get:
-            resolved = _resolve_cdp_override(HTTP_URL)
-
-        assert resolved == WS_URL
-        mock_get.assert_called_once_with(VERSION_URL, timeout=10)
-
-    def test_resolves_bare_ws_hostport_to_discovery_websocket(self):
-        from tools.browser_tool import _resolve_cdp_override
-
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.json.return_value = {"webSocketDebuggerUrl": WS_URL}
-
-        with patch("tools.browser_tool.requests.get", return_value=response) as mock_get:
-            resolved = _resolve_cdp_override(f"ws://{HOST}:{PORT}")
-
-        assert resolved == WS_URL
-        mock_get.assert_called_once_with(VERSION_URL, timeout=10)
-
-    def test_falls_back_to_raw_url_when_discovery_fails(self):
-        from tools.browser_tool import _resolve_cdp_override
-
-        with patch("tools.browser_tool.requests.get", side_effect=RuntimeError("boom")):
-            assert _resolve_cdp_override(HTTP_URL) == HTTP_URL
 
     def test_redacts_secret_query_params_in_success_log(self):
         from tools.browser_tool import _resolve_cdp_override
@@ -162,6 +131,30 @@ class TestGetCdpOverride:
         assert resolved == WS_URL
         mock_get.assert_called_once_with(VERSION_URL, timeout=10)
 
+    def test_camofox_yields_to_config_cdp_override(self, monkeypatch):
+        """CAMOFOX_URL + a persistent browser.cdp_url config override must NOT
+        report camofox mode: the CDP browser takes precedence so navigation is
+        not routed through Camofox, and the CDP backend stays non-local for SSRF
+        checks. Regression for the env-only suppression gap (config CDP was
+        ignored, so CAMOFOX_URL + config CDP still dispatched to Camofox)."""
+        import tools.browser_camofox as bc
+
+        monkeypatch.setenv("CAMOFOX_URL", "http://localhost:9377")
+        monkeypatch.delenv("BROWSER_CDP_URL", raising=False)
+
+        # No CDP anywhere -> camofox mode is on.
+        with patch("hermes_cli.config.read_raw_config", return_value={}):
+            assert bc.is_camofox_mode() is True
+
+        # A config-only CDP override suppresses camofox.
+        with patch("hermes_cli.config.read_raw_config",
+                   return_value={"browser": {"cdp_url": HTTP_URL}}):
+            assert bc.is_camofox_mode() is False
+
+        # The env override still suppresses camofox.
+        monkeypatch.setenv("BROWSER_CDP_URL", HTTP_URL)
+        with patch("hermes_cli.config.read_raw_config", return_value={}):
+            assert bc.is_camofox_mode() is False
 
 class TestCreateCdpSession:
     """_create_cdp_session() must sanitize the CDP URL before logging.

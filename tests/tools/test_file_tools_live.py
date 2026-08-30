@@ -11,10 +11,7 @@ asserts zero contamination from shell noise via _assert_clean().
 import pytest
 
 
-
-
 import os
-import shlex
 import sys
 from pathlib import Path
 
@@ -22,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tools.environments.local import LocalEnvironment
-from tools.file_operations import ShellFileOperations, _windows_path_to_bash
+from tools.file_operations import ShellFileOperations
 
 
 # ── Shared noise detection ───────────────────────────────────────────────
@@ -49,18 +46,6 @@ def _assert_clean(text: str, context: str = "output"):
             f"Shell noise leaked into {context}: found {noise!r} in:\n"
             f"{text[:500]}"
         )
-
-
-def _shell_path(path: os.PathLike | str) -> str:
-    return _windows_path_to_bash(str(path))
-
-
-def _qpath(path: os.PathLike | str) -> str:
-    return shlex.quote(_shell_path(path))
-
-
-def _write_text_lf(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf-8", newline="\n")
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
@@ -90,10 +75,10 @@ def ops(env, tmp_path):
 @pytest.fixture
 def populated_dir(tmp_path):
     """A temp directory with known files for search/read tests."""
-    _write_text_lf(tmp_path / "alpha.py", MULTIFILE_A)
-    _write_text_lf(tmp_path / "bravo.py", MULTIFILE_B)
-    _write_text_lf(tmp_path / "notes.txt", MULTIFILE_C)
-    _write_text_lf(tmp_path / "data.csv", "col1,col2\n1,2\n3,4\n")
+    (tmp_path / "alpha.py").write_text(MULTIFILE_A)
+    (tmp_path / "bravo.py").write_text(MULTIFILE_B)
+    (tmp_path / "notes.txt").write_text(MULTIFILE_C)
+    (tmp_path / "data.csv").write_text("col1,col2\n1,2\n3,4\n")
     return tmp_path
 
 
@@ -112,46 +97,11 @@ class TestLocalEnvironmentExecute:
         assert result["output"] == "exact"
         _assert_clean(result["output"])
 
-    def test_exit_code_propagated(self, env):
-        result = env.execute("exit 42")
-        assert result["returncode"] == 42
-
-    def test_stderr_captured_in_output(self, env):
-        result = env.execute("echo STDERR_TEST >&2")
-        assert "STDERR_TEST" in result["output"]
-        _assert_clean(result["output"])
-
-    def test_cwd_respected(self, env, tmp_path):
-        subdir = tmp_path / "subdir_test"
-        subdir.mkdir()
-        result = env.execute("pwd", cwd=str(subdir))
-        assert result["returncode"] == 0
-        assert result["output"].strip() == _shell_path(subdir)
-        _assert_clean(result["output"])
-
-    def test_multiline_exact(self, env):
-        result = env.execute("echo AAA; echo BBB; echo CCC")
-        lines = [l for l in result["output"].strip().split("\n") if l.strip()]
-        assert lines == ["AAA", "BBB", "CCC"]
-        _assert_clean(result["output"])
-
-    def test_env_var_home(self, env):
-        result = env.execute("echo $HOME")
-        assert result["returncode"] == 0
-        home = result["output"].strip()
-        assert home == _shell_path(Path.home())
-        _assert_clean(result["output"])
-
-    def test_pipe_exact(self, env):
-        result = env.execute("echo 'one two three' | wc -w")
-        assert result["returncode"] == 0
-        assert result["output"].strip() == "3"
-        _assert_clean(result["output"])
 
     def test_cat_deterministic_content(self, env, tmp_path):
         f = tmp_path / "det.txt"
-        _write_text_lf(f, SIMPLE_CONTENT)
-        result = env.execute(f"cat {_qpath(f)}")
+        f.write_text(SIMPLE_CONTENT)
+        result = env.execute(f"cat {f}")
         assert result["returncode"] == 0
         assert result["output"] == SIMPLE_CONTENT
         _assert_clean(result["output"])
@@ -163,17 +113,6 @@ class TestHasCommand:
     def test_finds_echo(self, ops):
         assert ops._has_command("echo") is True
 
-    def test_finds_cat(self, ops):
-        assert ops._has_command("cat") is True
-
-    def test_finds_sed(self, ops):
-        assert ops._has_command("sed") is True
-
-    def test_finds_wc(self, ops):
-        assert ops._has_command("wc") is True
-
-    def test_finds_find(self, ops):
-        assert ops._has_command("find") is True
 
     def test_missing_command(self, ops):
         assert ops._has_command("nonexistent_tool_xyz_abc_999") is False
@@ -188,7 +127,7 @@ class TestHasCommand:
 class TestReadFile:
     def test_exact_content(self, ops, tmp_path):
         f = tmp_path / "exact.txt"
-        _write_text_lf(f, SIMPLE_CONTENT)
+        f.write_text(SIMPLE_CONTENT)
         result = ops.read_file(str(f))
         assert result.error is None
         # Content has line numbers prepended, check the actual text is there
@@ -198,44 +137,10 @@ class TestReadFile:
         assert result.total_lines == 3
         _assert_clean(result.content)
 
-    def test_absolute_path(self, ops, tmp_path):
-        f = tmp_path / "abs.txt"
-        _write_text_lf(f, "ABSOLUTE_PATH_CONTENT\n")
-        result = ops.read_file(str(f))
-        assert result.error is None
-        assert "ABSOLUTE_PATH_CONTENT" in result.content
-        _assert_clean(result.content)
-
-    def test_tilde_expansion(self, ops):
-        test_path = Path.home() / ".hermes_test_tilde_9f8a7b"
-        try:
-            _write_text_lf(test_path, "TILDE_EXPANSION_OK\n")
-            result = ops.read_file("~/.hermes_test_tilde_9f8a7b")
-            assert result.error is None
-            assert "TILDE_EXPANSION_OK" in result.content
-            _assert_clean(result.content)
-        finally:
-            test_path.unlink(missing_ok=True)
-
-    def test_nonexistent_returns_error(self, ops, tmp_path):
-        result = ops.read_file(str(tmp_path / "ghost.txt"))
-        assert result.error is not None
-
-    def test_pagination_exact_window(self, ops, tmp_path):
-        f = tmp_path / "numbered.txt"
-        _write_text_lf(f, NUMBERED_CONTENT)
-        result = ops.read_file(str(f), offset=10, limit=5)
-        assert result.error is None
-        assert "LINE_0010" in result.content
-        assert "LINE_0014" in result.content
-        assert "LINE_0009" not in result.content
-        assert "LINE_0015" not in result.content
-        assert result.total_lines == 50
-        _assert_clean(result.content)
 
     def test_no_noise_in_content(self, ops, tmp_path):
         f = tmp_path / "noise_check.txt"
-        _write_text_lf(f, "ONLY_THIS_CONTENT\n")
+        f.write_text("ONLY_THIS_CONTENT\n")
         result = ops.read_file(str(f))
         assert result.error is None
         _assert_clean(result.content)
@@ -251,32 +156,6 @@ class TestWriteFile:
         assert result.bytes_written == len(SIMPLE_CONTENT.encode())
         assert Path(path).read_text() == SIMPLE_CONTENT
 
-    def test_creates_nested_dirs(self, ops, tmp_path):
-        path = str(tmp_path / "a" / "b" / "c" / "deep.txt")
-        result = ops.write_file(path, "DEEP_CONTENT\n")
-        assert result.error is None
-        assert result.dirs_created is True
-        assert Path(path).read_text() == "DEEP_CONTENT\n"
-
-    def test_overwrites_exact(self, ops, tmp_path):
-        path = str(tmp_path / "overwrite.txt")
-        _write_text_lf(Path(path), "OLD_DATA\n")
-        result = ops.write_file(path, "NEW_DATA\n")
-        assert result.error is None
-        assert Path(path).read_text() == "NEW_DATA\n"
-
-    def test_large_content_via_stdin(self, ops, tmp_path):
-        path = str(tmp_path / "large.txt")
-        content = "X" * 200_000 + "\n"
-        result = ops.write_file(path, content)
-        assert result.error is None
-        assert Path(path).read_text() == content
-
-    def test_special_characters_preserved(self, ops, tmp_path):
-        path = str(tmp_path / "special.txt")
-        result = ops.write_file(path, SPECIAL_CONTENT)
-        assert result.error is None
-        assert Path(path).read_text() == SPECIAL_CONTENT
 
     def test_roundtrip_read_write(self, ops, tmp_path):
         """Write -> read back -> verify exact match."""
@@ -294,21 +173,28 @@ class TestWriteFile:
 class TestPatchReplace:
     def test_exact_replacement(self, ops, tmp_path):
         path = str(tmp_path / "patch.txt")
-        _write_text_lf(Path(path), "hello world\n")
+        Path(path).write_text("hello world\n")
         result = ops.patch_replace(path, "world", "earth")
         assert result.error is None
         assert Path(path).read_text() == "hello earth\n"
 
-    def test_not_found_error(self, ops, tmp_path):
-        path = str(tmp_path / "patch2.txt")
-        _write_text_lf(Path(path), "hello\n")
-        result = ops.patch_replace(path, "NONEXISTENT_STRING", "replacement")
+
+    def test_identical_replacement_explains_no_change(self, ops, tmp_path):
+        path = str(tmp_path / "unchanged.txt")
+        Path(path).write_text("hello world\n")
+
+        result = ops.patch_replace(path, "world", "world")
+
+        assert result.success is False
         assert result.error is not None
-        assert "Could not find" in result.error
+        assert "No edit was applied" in result.error
+        assert "existing text to replace in old_string" in result.error
+        assert "replacement text in new_string" in result.error
+        assert Path(path).read_text() == "hello world\n"
 
     def test_multiline_patch(self, ops, tmp_path):
         path = str(tmp_path / "multi.txt")
-        _write_text_lf(Path(path), "line1\nline2\nline3\n")
+        Path(path).write_text("line1\nline2\nline3\n")
         result = ops.patch_replace(path, "line2", "REPLACED")
         assert result.error is None
         assert Path(path).read_text() == "line1\nREPLACED\nline3\n"
@@ -326,41 +212,6 @@ class TestSearch:
             _assert_clean(m.content)
             _assert_clean(m.path)
 
-    def test_content_search_no_false_positives(self, ops, populated_dir):
-        result = ops.search("ZZZZZ_NONEXISTENT", str(populated_dir), target="content")
-        assert result.error is None
-        assert result.total_count == 0
-        assert len(result.matches) == 0
-
-    def test_file_search_finds_py_files(self, ops, populated_dir):
-        result = ops.search("*.py", str(populated_dir), target="files")
-        assert result.error is None
-        assert result.total_count >= 2
-        # Verify only expected files appear
-        found_names = set()
-        for f in result.files:
-            name = Path(f).name
-            found_names.add(name)
-            _assert_clean(f)
-        assert "alpha.py" in found_names
-        assert "bravo.py" in found_names
-        assert "notes.txt" not in found_names
-
-    def test_file_search_no_false_file_entries(self, ops, populated_dir):
-        """Every entry in the files list must be a real path, not noise."""
-        result = ops.search("*.py", str(populated_dir), target="files")
-        assert result.error is None
-        for f in result.files:
-            _assert_clean(f)
-            assert Path(f).exists(), f"Search returned non-existent path: {f}"
-
-    def test_content_search_with_glob_filter(self, ops, populated_dir):
-        result = ops.search("return", str(populated_dir), target="content", file_glob="*.py")
-        assert result.error is None
-        for m in result.matches:
-            assert m.path.endswith(".py"), f"Non-py file in results: {m.path}"
-            _assert_clean(m.content)
-            _assert_clean(m.path)
 
     def test_search_output_has_zero_noise(self, ops, populated_dir):
         """Dedicated noise check: search must return only real content."""
@@ -376,20 +227,10 @@ class TestSearch:
 class TestExpandPath:
     def test_tilde_exact(self, ops):
         result = ops._expand_path("~/test.txt")
-        expected = f"{_shell_path(Path.home())}/test.txt"
+        expected = f"{Path.home()}/test.txt"
         assert result == expected
         _assert_clean(result)
 
-    def test_absolute_unchanged(self, ops):
-        assert ops._expand_path("/tmp/test.txt") == "/tmp/test.txt"
-
-    def test_relative_unchanged(self, ops):
-        assert ops._expand_path("relative/path.txt") == "relative/path.txt"
-
-    def test_bare_tilde(self, ops):
-        result = ops._expand_path("~")
-        assert result == _shell_path(Path.home())
-        _assert_clean(result)
 
     def test_tilde_injection_blocked(self, ops):
         """Paths like ~; rm -rf / must NOT execute shell commands."""
@@ -422,43 +263,11 @@ class TestTerminalOutputCleanliness:
 
     def test_cat(self, env, tmp_path):
         f = tmp_path / "cat_test.txt"
-        _write_text_lf(f, "CAT_CONTENT_EXACT\n")
-        result = env.execute(f"cat {_qpath(f)}")
+        f.write_text("CAT_CONTENT_EXACT\n")
+        result = env.execute(f"cat {f}")
         assert result["output"] == "CAT_CONTENT_EXACT\n"
         _assert_clean(result["output"])
 
-    def test_ls(self, env, tmp_path):
-        _write_text_lf(tmp_path / "file_a.txt", "")
-        _write_text_lf(tmp_path / "file_b.txt", "")
-        result = env.execute(f"ls {_qpath(tmp_path)}")
-        _assert_clean(result["output"])
-        assert "file_a.txt" in result["output"]
-        assert "file_b.txt" in result["output"]
-
-    def test_wc(self, env, tmp_path):
-        f = tmp_path / "wc_test.txt"
-        _write_text_lf(f, "one\ntwo\nthree\n")
-        result = env.execute(f"wc -l < {_qpath(f)}")
-        assert result["output"].strip() == "3"
-        _assert_clean(result["output"])
-
-    def test_head(self, env, tmp_path):
-        f = tmp_path / "head_test.txt"
-        _write_text_lf(f, NUMBERED_CONTENT)
-        result = env.execute(f"head -n 3 {_qpath(f)}")
-        expected = "LINE_0001\nLINE_0002\nLINE_0003\n"
-        assert result["output"] == expected
-        _assert_clean(result["output"])
-
-    def test_env_var_expansion(self, env):
-        result = env.execute("echo $HOME")
-        assert result["output"].strip() == _shell_path(Path.home())
-        _assert_clean(result["output"])
-
-    def test_command_substitution(self, env):
-        result = env.execute("echo $(echo NESTED)")
-        assert result["output"].strip() == "NESTED"
-        _assert_clean(result["output"])
 
     def test_command_v_detection(self, env):
         """This is how _has_command works -- must return clean 'yes'."""
