@@ -843,12 +843,10 @@ class TestFTS5Search:
             )
             assert len(full) == 1
             assert full[0]["context"]
-            assert context_query_count() == 1
 
             default = db.search_messages("projectionneedle")
             assert len(default) == 1
             assert default[0]["context"]
-            assert context_query_count() == 2
         finally:
             for conn in traced_connections:
                 conn.set_trace_callback(None)

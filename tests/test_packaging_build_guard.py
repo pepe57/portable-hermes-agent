@@ -56,11 +56,10 @@ def _build_artifact(kind: str, tmp_path, *, nix_build: bool) -> subprocess.Compl
 
 
 @pytest.mark.parametrize("kind", ["sdist", "wheel"])
-def test_artifact_build_rejects_nix_development_shell_environment(kind, tmp_path):
+def test_portable_artifact_build_allows_non_nix_environment(kind, tmp_path):
     result = _build_artifact(kind, tmp_path, nix_build=False)
 
-    assert result.returncode != 0
-    assert "Building wheels or sdists for hermes-agent is not supported" in result.stderr
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize(

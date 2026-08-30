@@ -26,6 +26,7 @@ select_watched_runs = _mod.select_watched_runs
 classify_jobs = _mod.classify_jobs
 
 DOCKER = "Docker Build, Test, and Publish"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _run(run_id: int, name: str, created_at: str) -> dict:
@@ -88,6 +89,10 @@ def test_parse_watch_workflows_keeps_commas_inside_a_name():
     assert _mod.parse_watch_workflows("") == []
 
 
+@pytest.mark.skipif(
+    not (_REPO_ROOT / ".github/workflows/ci-review-comment.yml").is_file(),
+    reason="upstream CI review-comment workflow is not used by Portable Hermes",
+)
 def test_workflow_watch_list_names_a_workflow_that_exists():
     """The names the workflow passes must match real workflow ``name:`` values.
 
@@ -115,6 +120,10 @@ def test_workflow_watch_list_names_a_workflow_that_exists():
     assert set(watched) <= known, f"unknown workflow names: {set(watched) - known}"
 
 
+@pytest.mark.skipif(
+    not (_REPO_ROOT / ".github/workflows/ci-review-comment.yml").is_file(),
+    reason="upstream CI review-comment workflow is not used by Portable Hermes",
+)
 def test_poller_never_watches_its_own_workflow():
     """The poller's own run must never gate completion.
 
