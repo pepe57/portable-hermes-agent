@@ -9,8 +9,9 @@ def test_official_repo_url_policy_accepts_portable_forms():
     assert hm._is_official_repo_url(
         "https://github.com/aivrar/portable-hermes-agent.git"
     )
+    assert hm._is_official_repo_url("git@github.com:aivrar/portable-hermes-agent.git")
     assert hm._is_official_repo_url(
-        "git@github.com:aivrar/portable-hermes-agent.git"
+        "ssh://git@github.com/aivrar/portable-hermes-agent.git"
     )
     assert hm._is_fork("https://github.com/NousResearch/hermes-agent.git")
 
@@ -30,9 +31,10 @@ def test_sync_with_upstream_skips_nonportable_existing_upstream(capsys):
         raise AssertionError(f"unexpected command: {cmd!r}")
 
     with patch.object(hm.subprocess, "run", side_effect=fake_run):
-        hm._sync_with_upstream_if_needed(["git"], Path("unused"))
+        checked = hm._sync_with_upstream_if_needed(["git"], Path("unused"))
 
     out = capsys.readouterr().out
+    assert checked is False
     assert "not Portable Hermes Agent" in out
     assert "https://github.com/NousResearch/hermes-agent.git" in out
     assert not any(cmd[:3] == ["git", "fetch", "upstream"] for cmd in calls)
@@ -59,8 +61,26 @@ def test_sync_with_upstream_fetches_official_portable_upstream(capsys):
         raise AssertionError(f"unexpected command: {cmd!r}")
 
     with patch.object(hm.subprocess, "run", side_effect=fake_run):
-        hm._sync_with_upstream_if_needed(["git"], Path("unused"))
+        checked = hm._sync_with_upstream_if_needed(["git"], Path("unused"))
 
     out = capsys.readouterr().out
+    assert checked is True
     assert "Fork is up to date with upstream" in out
     assert ["git", "fetch", "upstream", "main", "--quiet"] in calls
+
+
+def test_zip_update_targets_portable_distribution_and_preserves_runtime():
+    from hermes_cli import update_cmd
+
+    source = Path(update_cmd.__file__).read_text(encoding="utf-8")
+    assert "aivrar/portable-hermes-agent/" in source
+    assert "NousResearch/hermes-agent/archive/refs/heads" not in source
+    assert {
+        ".git",
+        ".hermes",
+        ".venv",
+        "extensions",
+        "node_modules",
+        "python_embedded",
+        "venv",
+    }.issubset(update_cmd._ZIP_PRESERVED_TOP_LEVEL)

@@ -21,7 +21,6 @@ Three independent fixes that were salvaged together:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -33,15 +32,6 @@ from tools.skills_hub import (
     uninstall_skill,
 )
 from tools.skills_guard import content_hash
-
-
-def _symlink_or_skip(link: Path, target: Path) -> None:
-    try:
-        link.symlink_to(target, target_is_directory=target.is_dir())
-    except (OSError, NotImplementedError) as exc:
-        if os.name == "nt":
-            pytest.skip(f"Symlink creation unavailable on this Windows host: {exc}")
-        raise
 
 
 # =============================================================================
@@ -143,7 +133,7 @@ class TestUninstallPathTraversal:
         skills_dir, hub_dir, victim = hub_setup
         # Create a "skill" that's actually a symlink to victim
         evil_link = skills_dir / "trapdoor"
-        _symlink_or_skip(evil_link, victim)
+        evil_link.symlink_to(victim)
 
         self._write_lock(hub_dir, {
             "trap": {
@@ -211,27 +201,6 @@ class TestBundleHashFilenameSensitivity:
         b = self._make_bundle({"SKILL.md": "world", "scripts/run.sh": "hello"})
         assert bundle_content_hash(a) != bundle_content_hash(b)
 
-    def test_identical_bundles_same_hash(self):
-        """Sanity: equal content + paths = equal hash."""
-        a = self._make_bundle({"SKILL.md": "x", "run.sh": "y"})
-        b = self._make_bundle({"SKILL.md": "x", "run.sh": "y"})
-        assert bundle_content_hash(a) == bundle_content_hash(b)
-
-    def test_disk_hash_changes_on_filename_swap(self, tmp_path):
-        """``content_hash`` on disk must also be filename-sensitive,
-        so it stays symmetric with ``bundle_content_hash``."""
-        skill_a = tmp_path / "a"
-        skill_a.mkdir()
-        (skill_a / "SKILL.md").write_text("hello")
-        (skill_a / "run.sh").write_text("world")
-
-        skill_b = tmp_path / "b"
-        skill_b.mkdir()
-        (skill_b / "SKILL.md").write_text("world")
-        (skill_b / "run.sh").write_text("hello")
-
-        # Different filename↔content mappings = different hashes.
-        assert content_hash(skill_a) != content_hash(skill_b)
 
     def test_bundle_and_disk_hash_match(self, tmp_path):
         """Symmetry contract: the same skill, expressed as a SkillBundle

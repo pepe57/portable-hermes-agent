@@ -527,11 +527,21 @@ LIST_CUSTOM_TOOLS_SCHEMA = {
     "parameters": {"type": "object", "properties": {}},
 }
 
-for name, schema, handler in [
-    ("create_tool", CREATE_TOOL_SCHEMA, create_tool_handler),
-    ("delete_tool", DELETE_TOOL_SCHEMA, delete_tool_handler),
-    ("list_custom_tools", LIST_CUSTOM_TOOLS_SCHEMA, list_custom_tools_handler),
-]:
-    registry.register(
-        name=name, toolset="tool_maker", schema=schema, handler=handler,
-    )
+registry.register(
+    name="create_tool",
+    toolset="tool_maker",
+    schema=CREATE_TOOL_SCHEMA,
+    handler=create_tool_handler,
+)
+registry.register(
+    name="delete_tool",
+    toolset="tool_maker",
+    schema=DELETE_TOOL_SCHEMA,
+    handler=delete_tool_handler,
+)
+registry.register(
+    name="list_custom_tools",
+    toolset="tool_maker",
+    schema=LIST_CUSTOM_TOOLS_SCHEMA,
+    handler=list_custom_tools_handler,
+)

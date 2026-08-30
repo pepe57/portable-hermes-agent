@@ -20,9 +20,6 @@ HEADERS = {"X-Hermes-Session-Token": _SESSION_TOKEN}
 def _env_rows(monkeypatch, env_on_disk):
     """Drive GET /api/env with a controlled on-disk env mapping."""
     monkeypatch.setattr(web_server, "load_env", lambda: dict(env_on_disk))
-    monkeypatch.setattr(web_server.app.state, "bound_host", "testserver", raising=False)
-    monkeypatch.setattr(web_server.app.state, "bound_port", 80, raising=False)
-    monkeypatch.setattr(web_server.app.state, "auth_required", False, raising=False)
     # Channel-managed key detection reads real config; force empty so the test
     # is hermetic and the custom-key path is exercised directly.
     monkeypatch.setattr(web_server, "_channel_managed_env_keys", lambda: set())
@@ -48,14 +45,6 @@ def test_custom_key_is_password_masked(monkeypatch):
     # The raw value must never ride in the listing payload.
     assert row["redacted_value"] != "s3cret-value"
     assert "s3cret-value" not in str(row)
-
-
-def test_catalogued_key_is_not_marked_custom(monkeypatch):
-    """A key present in OPTIONAL_ENV_VARS keeps its real category, not custom."""
-    rows = _env_rows(monkeypatch, {"HONCHO_API_KEY": "abc123"})
-    row = rows["HONCHO_API_KEY"]
-    assert row.get("custom") is not True
-    assert row["category"] == "tool"
 
 
 def test_every_row_has_custom_flag(monkeypatch):

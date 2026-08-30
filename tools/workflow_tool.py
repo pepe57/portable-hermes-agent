@@ -599,14 +599,39 @@ WORKFLOW_SCHEDULE_SCHEMA = {
     },
 }
 
-for name, schema, handler in [
-    ("workflow_create", WORKFLOW_CREATE_SCHEMA, workflow_create_handler),
-    ("workflow_run", WORKFLOW_RUN_SCHEMA, workflow_run_handler),
-    ("workflow_list", WORKFLOW_LIST_SCHEMA, workflow_list_handler),
-    ("workflow_delete", WORKFLOW_DELETE_SCHEMA, workflow_delete_handler),
-    ("workflow_show", WORKFLOW_SHOW_SCHEMA, workflow_show_handler),
-    ("workflow_schedule", WORKFLOW_SCHEDULE_SCHEMA, workflow_schedule_handler),
-]:
-    registry.register(
-        name=name, toolset="workflows", schema=schema, handler=handler,
-    )
+registry.register(
+    name="workflow_create",
+    toolset="workflows",
+    schema=WORKFLOW_CREATE_SCHEMA,
+    handler=workflow_create_handler,
+)
+registry.register(
+    name="workflow_run",
+    toolset="workflows",
+    schema=WORKFLOW_RUN_SCHEMA,
+    handler=workflow_run_handler,
+)
+registry.register(
+    name="workflow_list",
+    toolset="workflows",
+    schema=WORKFLOW_LIST_SCHEMA,
+    handler=workflow_list_handler,
+)
+registry.register(
+    name="workflow_delete",
+    toolset="workflows",
+    schema=WORKFLOW_DELETE_SCHEMA,
+    handler=workflow_delete_handler,
+)
+registry.register(
+    name="workflow_show",
+    toolset="workflows",
+    schema=WORKFLOW_SHOW_SCHEMA,
+    handler=workflow_show_handler,
+)
+registry.register(
+    name="workflow_schedule",
+    toolset="workflows",
+    schema=WORKFLOW_SCHEDULE_SCHEMA,
+    handler=workflow_schedule_handler,
+)

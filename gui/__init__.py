@@ -1,1 +1,0 @@
-# Hermes Agent - Windows GUI

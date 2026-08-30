@@ -80,6 +80,15 @@ _PORTABLE_SOURCE_PATHS = {
     "tools/guide_tool.py",
 }
 
+# Paths that belong to the portable distribution rather than upstream Hermes.
+# A divergent-history fallback replaces the tracked tree with upstream's tree,
+# then restores these paths from the pre-update portable commit before the
+# merge is finalized. Ignored runtime directories are never touched by
+# ``git read-tree``; the tracked policy/test trees need explicit restoration.
+_PORTABLE_GIT_PRESERVE_PATHS = tuple(
+    sorted(_PORTABLE_SOURCE_PATHS | _PORTABLE_RUNTIME_PATHS | {".github", "tests"})
+)
+
 _CUSTOM_CORE_TOOLS = [
     "run_python",
     "gpu_info",
@@ -312,6 +321,11 @@ def _create_backup_branch() -> str | None:
     return name if rc == 0 else None
 
 
+def _current_commit_sha() -> str:
+    rc, out, _ = _run_git("rev-parse", "HEAD")
+    return out if rc == 0 else ""
+
+
 def _snapshot_portable_sources() -> dict[str, bytes]:
     snapshot: dict[str, bytes] = {}
     for rel_path in sorted(_PORTABLE_SOURCE_PATHS):
@@ -398,6 +412,115 @@ def _repair_portable_surface(snapshot: dict[str, bytes] | None = None) -> dict[s
         "custom_toolsets": _ensure_custom_toolsets(),
         "preserved_runtime_paths": sorted(_PORTABLE_RUNTIME_DIRS | _PORTABLE_RUNTIME_PATHS),
     }
+
+
+def _portable_surface_is_ready() -> tuple[bool, str]:
+    missing_paths = [
+        rel_path
+        for rel_path in _PORTABLE_SOURCE_PATHS
+        if not (_PROJECT_ROOT / rel_path).is_file()
+    ]
+    if missing_paths:
+        return False, f"missing portable paths: {', '.join(sorted(missing_paths))}"
+
+    readme_path = _PROJECT_ROOT / "README.md"
+    readme = readme_path.read_text(encoding="utf-8")
+    if not readme.startswith("# Portable Hermes Agent"):
+        return False, "README.md is not the Portable Hermes Agent README"
+
+    toolsets_path = _PROJECT_ROOT / "toolsets.py"
+    if not toolsets_path.is_file():
+        return False, "toolsets.py not found"
+    content = toolsets_path.read_text(encoding="utf-8")
+    missing_tools = [name for name in _CUSTOM_CORE_TOOLS if f'"{name}"' not in content]
+    missing_toolsets = [
+        name for name in _CUSTOM_TOOLSETS if f'    "{name}": {{' not in content
+    ]
+    if missing_tools or missing_toolsets:
+        details = []
+        if missing_tools:
+            details.append(f"missing tools: {', '.join(missing_tools)}")
+        if missing_toolsets:
+            details.append(f"missing toolsets: {', '.join(missing_toolsets)}")
+        return False, "; ".join(details)
+    return True, "portable surface verified"
+
+
+def _tracked_portable_preserve_paths(commit: str) -> tuple[str, ...]:
+    """Return portable pathspecs that actually exist in ``commit``."""
+    rc, out, _ = _run_git("ls-tree", "-r", "--name-only", "-z", commit)
+    if rc != 0:
+        return ()
+    tracked = {path for path in out.split("\0") if path}
+    selected = []
+    for rel_path in _PORTABLE_GIT_PRESERVE_PATHS:
+        prefix = rel_path.rstrip("/") + "/"
+        if rel_path in tracked or any(path.startswith(prefix) for path in tracked):
+            selected.append(rel_path)
+    return tuple(selected)
+
+
+def _finish_divergent_upstream_merge(
+    merge_ref: str,
+    pre_merge_head: str,
+    *,
+    timeout: int,
+) -> tuple[bool, dict[str, Any]]:
+    """Resolve a conflict-heavy upstream merge using upstream's tracked tree.
+
+    Portable releases before this updater recorded some upstream refreshes as
+    snapshot commits. A normal three-way merge therefore reports thousands of
+    add/add conflicts even when the desired result is unambiguous. Preserve the
+    merge ancestry, take the current upstream tracked tree, restore the tested
+    portable distribution surface from the pre-update commit, and only then
+    finalize the merge.
+    """
+    details: dict[str, Any] = {"strategy": "upstream-tree-with-portable-overlay"}
+
+    rc, _, err = _run_git("rev-parse", "-q", "--verify", "MERGE_HEAD")
+    if rc != 0:
+        rc, out, err = _run_git(
+            "merge", "--strategy=ours", "--no-commit", merge_ref, timeout=timeout
+        )
+        details["merge_state"] = _tail(out or err)
+        if rc != 0:
+            return False, {**details, "error": _tail(err or out)}
+
+    rc, out, err = _run_git("read-tree", "--reset", "-u", merge_ref, timeout=timeout)
+    details["upstream_tree"] = "loaded" if rc == 0 else _tail(err or out)
+    if rc != 0:
+        return False, {**details, "error": _tail(err or out)}
+
+    preserve_paths = _tracked_portable_preserve_paths(pre_merge_head)
+    if not preserve_paths:
+        return False, {**details, "error": "no tracked portable paths found to restore"}
+    rc, out, err = _run_git(
+        "checkout",
+        pre_merge_head,
+        "--",
+        *preserve_paths,
+        timeout=timeout,
+    )
+    details["portable_paths"] = "restored" if rc == 0 else _tail(err or out)
+    details["portable_path_count"] = len(preserve_paths)
+    if rc != 0:
+        return False, {**details, "error": _tail(err or out)}
+
+    details["portable_repair"] = _repair_portable_surface({})
+    ready, ready_status = _portable_surface_is_ready()
+    details["portable_verification"] = ready_status
+    if not ready:
+        return False, {**details, "error": ready_status}
+
+    rc, out, err = _run_git("add", "--", "toolsets.py", timeout=timeout)
+    if rc != 0:
+        return False, {**details, "error": _tail(err or out)}
+
+    rc, out, err = _run_git("commit", "--no-edit", timeout=timeout)
+    details["commit"] = _tail(out or err)
+    if rc != 0:
+        return False, {**details, "error": _tail(err or out)}
+    return True, details
 
 
 def _is_preserved_overlay_path(rel_path: str) -> bool:
@@ -570,7 +693,11 @@ def update_hermes_handler(args: dict, **kwargs) -> str:
         overlay = _overlay_upstream_zip(branch, timeout=timeout)
         result["steps"].append({"upstream_zip_overlay": overlay})
         result["portable_repair"] = _repair_portable_surface(snapshot)
-        result["success"] = bool(overlay.get("success"))
+        ready, ready_status = _portable_surface_is_ready()
+        result["portable_verification"] = ready_status
+        result["success"] = bool(overlay.get("success")) and ready
+        if overlay.get("success") and not ready:
+            result["error"] = ready_status
         result["current_commit"] = ""
         return _json(result)
 
@@ -601,6 +728,11 @@ def update_hermes_handler(args: dict, **kwargs) -> str:
             return _json(result)
 
         merge_ref = f"{remote}/{branch}"
+        pre_merge_head = _current_commit_sha()
+        if not pre_merge_head:
+            result["success"] = False
+            result["error"] = "Could not resolve the pre-update commit"
+            return _json(result)
         rc, out, err = _run_git("merge", "--ff-only", merge_ref, timeout=timeout)
         if rc == 0:
             result["steps"].append({"merge": "fast-forward", "output": _tail(out)})
@@ -609,11 +741,17 @@ def update_hermes_handler(args: dict, **kwargs) -> str:
             if rc2 == 0:
                 result["steps"].append({"merge": "merge-commit", "output": _tail(out2)})
             else:
-                _run_git("merge", "--abort", timeout=120)
-                result["steps"].append({"merge": "failed", "error": _tail(err2 or err)})
-                result["success"] = False
-                result["error"] = err2 or err
-                return _json(result)
+                fallback_ok, fallback = _finish_divergent_upstream_merge(
+                    merge_ref,
+                    pre_merge_head,
+                    timeout=timeout,
+                )
+                result["steps"].append({"merge": "divergent-history", **fallback})
+                if not fallback_ok:
+                    _run_git("merge", "--abort", timeout=120)
+                    result["success"] = False
+                    result["error"] = fallback.get("error") or err2 or err
+                    return _json(result)
         else:
             result["steps"].append({"merge": "failed", "error": _tail(err)})
             result["success"] = False
@@ -626,8 +764,12 @@ def update_hermes_handler(args: dict, **kwargs) -> str:
             result["stash_restore_failed"] = True
 
     result["portable_repair"] = _repair_portable_surface(snapshot)
+    ready, ready_status = _portable_surface_is_ready()
+    result["portable_verification"] = ready_status
     result["current_commit"] = _current_commit()
-    result["success"] = not result.get("stash_restore_failed", False)
+    result["success"] = not result.get("stash_restore_failed", False) and ready
+    if not ready:
+        result["error"] = ready_status
     return _json(result)
 
 
