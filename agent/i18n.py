@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sysconfig
 import threading
 from functools import lru_cache
 from pathlib import Path
@@ -97,6 +98,7 @@ def _locales_dir() -> Path:
        sealed-packaging system) to point at the installed catalog directory.
     2. ``<repo-root>/locales`` -- source checkouts and editable installs,
        where the working tree sits next to ``agent/``.
+    3. ``<sysconfig data|purelib|platlib>/locales`` -- portable wheel installs.
 
     Falling through to the source-style path (even when missing) keeps
     ``_load_catalog`` error messages informative -- it logs the path it
@@ -115,6 +117,21 @@ def _locales_dir() -> Path:
 
     # agent/i18n.py -> agent/ -> repo root (source checkout, editable install)
     source_dir = Path(__file__).resolve().parent.parent / "locales"
+    if source_dir.is_dir():
+        return source_dir
+
+    # Portable Hermes keeps supporting wheels even though upstream's primary
+    # distribution channels are Nix and source installs. setuptools data-files
+    # extracts locales under the interpreter's data scheme; purelib/platlib are
+    # included for nonstandard layouts.
+    for scheme in ("data", "purelib", "platlib"):
+        raw = sysconfig.get_path(scheme)
+        if not raw:
+            continue
+        candidate = Path(raw) / "locales"
+        if candidate.is_dir():
+            return candidate
+
     return source_dir
 
 
