@@ -7,6 +7,7 @@ import build_release
 
 def test_release_zip_includes_user_launchers_and_docs():
     assert build_release.should_exclude("START.bat") is False
+    assert build_release.should_exclude("hermes_gui.bat") is False
     assert build_release.should_exclude("UPDATE.bat") is False
     assert build_release.should_exclude("START_HERE.txt") is False
     assert build_release.should_exclude("README.md") is False

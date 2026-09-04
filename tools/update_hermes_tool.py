@@ -62,6 +62,7 @@ _PORTABLE_SOURCE_PATHS = {
     "START_HERE.txt",
     "UPDATE.bat",
     "hermes.bat",
+    "hermes_gui.bat",
     "install.bat",
     "scripts/install.cmd",
     "scripts/install.ps1",
