@@ -154,25 +154,6 @@ class AgentBridge:
             pass
         return None
 
-    def _validate_startup_model(self):
-        """Detect LM Studio on startup and register any discovered models.
-        Default is always cloud mode — user switches to local via UI.
-        """
-        self._active_provider = "cloud"
-
-        # Probe LM Studio in case it's running — register models for sidebar
-        url = self._resolve_lm_studio_url()
-        if url:
-            try:
-                from gui.lm_studio import LMStudioClient
-                client = LMStudioClient(base_url=url)
-                for m in client.list_models_api():
-                    mid = m.get("id", "")
-                    if mid:
-                        self._known_local_models.add(mid)
-            except Exception:
-                pass
-
     def get_model(self) -> str:
         if not hasattr(self, '_selected_model') or not self._selected_model:
             model_config = self.config.get("model", {})

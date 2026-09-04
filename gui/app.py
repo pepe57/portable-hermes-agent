@@ -1190,9 +1190,6 @@ class HermesGUI:
         self._stream_bubble = None  # Active streaming bubble
         self._has_streamed = False   # True once any stream delta arrived
 
-        # Validate startup model (local model + LM Studio check)
-        self.bridge._validate_startup_model()
-
         self._build_menu()
         self._build_layout()
 
