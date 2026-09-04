@@ -27,7 +27,6 @@ if not exist "%PYTHON_EXE%" (
 
 set "PATH=%PYTHON_DIR%;%PYTHON_DIR%\Scripts;%SCRIPT_DIR%node_modules\.bin;%PATH%"
 set "PIP_TARGET=%PYTHON_DIR%\Lib\site-packages"
-set "PIP_PREFIX=%PYTHON_DIR%"
 set "PYTHONPATH=%PYTHON_DIR%\Lib\site-packages"
 set "HERMES_PYTHON=%PYTHON_EXE%"
 set "HERMES_ROOT=%SCRIPT_DIR%"

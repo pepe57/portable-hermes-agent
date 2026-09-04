@@ -73,7 +73,9 @@ Documentation:
 
 Notes:
 
-- Keep the extracted folder together. Runtime files such as python_embedded,
-  extensions, node_modules, .env, and cli-config.yaml are intentionally local.
-- API keys belong in the setup wizard or .env file, not in Git.
+- Keep the extracted folder together. Portable runtimes such as python_embedded,
+  extensions, and node_modules stay beside the app and survive updates.
+- User settings, skills, workflows, sessions, and API keys stay in the active
+  Hermes home (normally %USERPROFILE%\.hermes) and survive both update types.
+- API keys belong in the setup wizard or the Hermes-home .env file, not in Git.
 - Extension servers for TTS, Music, and ComfyUI install on first use.

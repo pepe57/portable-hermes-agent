@@ -13,6 +13,46 @@ def test_release_zip_includes_user_launchers_and_docs():
     assert build_release.should_exclude("README.md") is False
 
 
+def test_tracked_release_inventory_contains_complete_portable_surface():
+    release_files = set(build_release.iter_release_files())
+
+    assert {
+        "README.md",
+        "START.bat",
+        "START_HERE.txt",
+        "UPDATE.bat",
+        "hermes.bat",
+        "hermes_gui.bat",
+        "hermes_gui.vbs",
+        "install.bat",
+        "assets/SOUL.md",
+        "gui/__init__.py",
+        "gui/app.py",
+        "gui/agent_bridge.py",
+        "gui/api_setup_wizard.py",
+        "gui/extensions.py",
+        "gui/lm_studio.py",
+        "gui/permissions.py",
+        "gui/permissions_panel.py",
+        "gui/theme.py",
+        "skills/extensions/comfyui/SKILL.md",
+        "skills/extensions/music-server/SKILL.md",
+        "skills/extensions/tts-server/SKILL.md",
+        "skills/getting-started/SKILL.md",
+        "skills/lm-studio/SKILL.md",
+        "tools/extension_tools.py",
+        "tools/gpu_tool.py",
+        "tools/guide_tool.py",
+        "tools/lm_studio_tools.py",
+        "tools/model_switcher_tool.py",
+        "tools/run_python_tool.py",
+        "tools/serper_search_tool.py",
+        "tools/tool_maker.py",
+        "tools/update_hermes_tool.py",
+        "tools/workflow_tool.py",
+    } <= release_files
+
+
 def test_release_tag_produces_the_expected_asset_name(tmp_path, monkeypatch):
     monkeypatch.setattr(
         sys,
@@ -33,6 +73,28 @@ def test_readme_download_links_target_the_portable_release_page():
 
     assert "https://github.com/aivrar/portable-hermes-agent/releases/latest" in content
     assert "NousResearch/hermes-agent/releases" not in content
+
+
+def test_windows_launchers_keep_runtime_state_in_active_hermes_home():
+    root = Path(build_release.PROJECT_ROOT)
+    start = (root / "START.bat").read_text(encoding="utf-8")
+    install = (root / "install.bat").read_text(encoding="utf-8")
+    cli_launcher = (root / "hermes.bat").read_text(encoding="utf-8")
+    gui_launcher = (root / "hermes_gui.bat").read_text(encoding="utf-8")
+    updater = (root / "UPDATE.bat").read_text(encoding="utf-8")
+
+    for launcher in (install, cli_launcher, gui_launcher):
+        assert 'if not defined HERMES_HOME set "HERMES_HOME=%USERPROFILE%\\.hermes"' in launcher
+
+    assert "%HERMES_HOME%\\.env" in install
+    assert "%HERMES_HOME%\\config.yaml" in install
+    assert "%HERMES_HOME%\\permissions.json" in install
+    assert "%HERMES_HOME%\\skills\\" in install
+    assert "%USERPROFILE%\\.hermes\\permissions.json" not in install
+    assert 'call "%SCRIPT_DIR%hermes_gui.bat" %*' in start
+
+    for launcher in (start, cli_launcher, gui_launcher, updater):
+        assert 'set "PIP_PREFIX=' not in launcher
 
 
 def test_release_zip_excludes_development_only_dirs():

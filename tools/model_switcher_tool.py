@@ -2,23 +2,19 @@
 """
 Model Switcher Tool — Change the LLM model used by Hermes.
 
-Updates the .env file's LLM_MODEL line (and optionally OPENAI_BASE_URL for
-LM Studio local models) and sets os.environ so the next agent creation
-picks up the change without restarting the process.
+Updates the active profile's ``config.yaml`` using the current Hermes model
+schema so the next agent creation picks up the change.
 """
 
 import json
 import logging
 import os
-import re
-from pathlib import Path
 
+from hermes_cli.config import load_config, save_config
+from hermes_cli.providers import TRANSPORT_TO_API_MODE, get_provider, normalize_provider
 from tools.registry import registry
 
 logger = logging.getLogger(__name__)
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_ENV_FILE = _PROJECT_ROOT / ".env"
 
 def _detect_lmstudio_url() -> str:
     """Use LM_STUDIO_BASE_URL or fall back to OPENAI_BASE_URL, else default."""
@@ -29,7 +25,7 @@ def _detect_lmstudio_url() -> str:
     current = os.environ.get("OPENAI_BASE_URL", "")
     if current and ("localhost" in current or "127.0.0.1" in current):
         return current.rstrip("/")
-    return "http://localhost:8100/v1"
+    return "http://localhost:1234/v1"
 
 
 # Known provider base URLs
@@ -40,20 +36,8 @@ _PROVIDER_URLS = {
 }
 
 
-def _update_env_line(content: str, key: str, value: str) -> str:
-    """Update or append a KEY=value line in .env content."""
-    pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE)
-    new_line = f"{key}={value}"
-    if pattern.search(content):
-        return pattern.sub(new_line, content)
-    # Append if not present
-    if not content.endswith("\n"):
-        content += "\n"
-    return content + new_line + "\n"
-
-
 def switch_model_handler(args: dict, **kwargs) -> str:
-    """Switch the active LLM model by updating .env and os.environ."""
+    """Switch the active model in the current Hermes profile."""
     model = args.get("model", "").strip()
     if not model:
         return json.dumps({"error": "model parameter is required"})
@@ -61,35 +45,48 @@ def switch_model_handler(args: dict, **kwargs) -> str:
     provider = (args.get("provider") or "").strip().lower()
 
     try:
-        # Read current .env
-        if _ENV_FILE.exists():
-            content = _ENV_FILE.read_text(encoding="utf-8")
-        else:
-            content = ""
+        config = load_config()
+        model_config = dict(config.get("model") or {})
+        old_model = str(model_config.get("default") or "")
+        model_config["default"] = model
+        note = "Model updated in config.yaml."
 
-        old_model = os.environ.get("LLM_MODEL", "")
+        if provider:
+            if provider.startswith(("http://", "https://")):
+                target_provider = "custom"
+                base_url = provider.rstrip("/")
+                api_mode = "chat_completions"
+            else:
+                target_provider = normalize_provider(provider)
+                provider_def = get_provider(target_provider)
+                if provider_def is None:
+                    return json.dumps({
+                        "error": (
+                            f"Unknown provider '{provider}'. Use lmstudio, openai, "
+                            "openrouter, or a custom base URL."
+                        )
+                    })
+                base_url = _PROVIDER_URLS.get(target_provider) or provider_def.base_url
+                api_mode = TRANSPORT_TO_API_MODE.get(
+                    provider_def.transport, "chat_completions"
+                )
 
-        # Update LLM_MODEL
-        content = _update_env_line(content, "LLM_MODEL", model)
-        os.environ["LLM_MODEL"] = model
+            model_config["provider"] = target_provider
+            model_config["base_url"] = base_url
+            model_config["api_mode"] = api_mode
+            note += f" Provider set to {target_provider}."
 
-        # Update OPENAI_BASE_URL if provider specified
-        note = "Model updated in .env and environment."
-        if provider and provider in _PROVIDER_URLS:
-            base_url = _PROVIDER_URLS[provider]
-            content = _update_env_line(content, "OPENAI_BASE_URL", base_url)
-            os.environ["OPENAI_BASE_URL"] = base_url
-            note += f" Base URL set to {base_url}."
-        elif provider:
-            # Treat as a raw URL
-            content = _update_env_line(content, "OPENAI_BASE_URL", provider)
-            os.environ["OPENAI_BASE_URL"] = provider
-            note += f" Base URL set to {provider}."
-
+        config["model"] = model_config
+        save_config(
+            config,
+            preserve_keys={
+                ("model", "default"),
+                ("model", "provider"),
+                ("model", "base_url"),
+                ("model", "api_mode"),
+            },
+        )
         note += " Click + New Chat to apply."
-
-        # Write .env
-        _ENV_FILE.write_text(content, encoding="utf-8")
         logger.info("Switched model from %s to %s", old_model, model)
 
         return json.dumps({
@@ -109,8 +106,8 @@ def switch_model_handler(args: dict, **kwargs) -> str:
 SWITCH_MODEL_SCHEMA = {
     "name": "switch_model",
     "description": (
-        "Switch the LLM model used by Hermes. Updates the .env file and environment "
-        "variables. The change takes effect on the next new chat. "
+        "Switch the LLM model used by Hermes. Updates the active profile's config.yaml. "
+        "The change takes effect on the next new chat. "
         "For LM Studio local models, set provider='lmstudio'. "
         "For OpenRouter, set provider='openrouter'."
     ),

@@ -24,6 +24,7 @@ echo.
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_DIR=%SCRIPT_DIR%python_embedded"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
+if not defined HERMES_HOME set "HERMES_HOME=%USERPROFILE%\.hermes"
 
 set "PYTHON_VERSION=3.13.12"
 set "PYTHON_URL=https://www.python.org/ftp/python/3.13.12/python-3.13.12-embed-amd64.zip"
@@ -228,32 +229,43 @@ if %errorlevel% equ 0 (
 :: ============================================
 echo [STEP 9/10] Setting up configuration...
 
-:: .env
-if not exist "%SCRIPT_DIR%.env" (
-    if exist "%SCRIPT_DIR%.env.example" (
-        copy "%SCRIPT_DIR%.env.example" "%SCRIPT_DIR%.env" >nul
-        echo [OK] Created .env from template.
+if not exist "%HERMES_HOME%" mkdir "%HERMES_HOME%"
+
+:: Active-profile .env. Copy an older portable-root file forward when present.
+if not exist "%HERMES_HOME%\.env" (
+    if exist "%SCRIPT_DIR%.env" (
+        copy "%SCRIPT_DIR%.env" "%HERMES_HOME%\.env" >nul
+    ) else if exist "%SCRIPT_DIR%.env.example" (
+        copy "%SCRIPT_DIR%.env.example" "%HERMES_HOME%\.env" >nul
     )
 ) else (
-    echo [OK] .env already exists.
+    echo [OK] .env already exists in Hermes home.
 )
 
-:: cli-config.yaml
-if not exist "%SCRIPT_DIR%cli-config.yaml" (
-    if exist "%SCRIPT_DIR%cli-config.yaml.example" (
-        copy "%SCRIPT_DIR%cli-config.yaml.example" "%SCRIPT_DIR%cli-config.yaml" >nul
-        :: Fix Unicode chars that break on Windows
-        "%PYTHON_EXE%" -c "p=r'%SCRIPT_DIR%cli-config.yaml';f=open(p,'r',encoding='utf-8');c=f.read();f.close();c=c.replace('\u2014','--').replace('\u2192','->');f=open(p,'w',encoding='utf-8');f.write(c);f.close()" 2>nul
-        echo [OK] Created cli-config.yaml.
+:: Active-profile config.yaml. Preserve and migrate the legacy portable config.
+if not exist "%HERMES_HOME%\config.yaml" (
+    if exist "%SCRIPT_DIR%cli-config.yaml" (
+        copy "%SCRIPT_DIR%cli-config.yaml" "%HERMES_HOME%\config.yaml" >nul
+    ) else if exist "%SCRIPT_DIR%cli-config.yaml.example" (
+        copy "%SCRIPT_DIR%cli-config.yaml.example" "%HERMES_HOME%\config.yaml" >nul
+    )
+    if exist "%HERMES_HOME%\config.yaml" (
+        :: Fix Unicode chars that break on older Windows consoles.
+        "%PYTHON_EXE%" -c "p=r'%HERMES_HOME%\config.yaml';f=open(p,'r',encoding='utf-8');c=f.read();f.close();c=c.replace('\u2014','--').replace('\u2192','->');f=open(p,'w',encoding='utf-8');f.write(c);f.close()" 2>nul
+        echo [OK] Created config.yaml in Hermes home.
     )
 )
 
-:: Create ~/.hermes directory
-if not exist "%USERPROFILE%\.hermes" mkdir "%USERPROFILE%\.hermes"
+:: Default personality
+if not exist "%HERMES_HOME%\SOUL.md" (
+    if exist "%SCRIPT_DIR%assets\SOUL.md" (
+        copy "%SCRIPT_DIR%assets\SOUL.md" "%HERMES_HOME%\SOUL.md" >nul
+    )
+)
 
 :: Default permissions
-if not exist "%USERPROFILE%\.hermes\permissions.json" (
-    "%PYTHON_EXE%" -c "import json;json.dump({'read':2,'write':1,'install':1,'execute':2,'remove':1,'network':2},open(r'%USERPROFILE%\.hermes\permissions.json','w'),indent=2)" 2>nul
+if not exist "%HERMES_HOME%\permissions.json" (
+    "%PYTHON_EXE%" -c "import json;json.dump({'read':2,'write':1,'install':1,'execute':2,'remove':1,'network':2},open(r'%HERMES_HOME%\permissions.json','w'),indent=2)" 2>nul
     echo [OK] Default permissions created.
 )
 
@@ -266,7 +278,7 @@ cd /d "%SCRIPT_DIR%"
 if errorlevel 1 (
     :: Fallback: manual copy
     if exist "%SCRIPT_DIR%skills" (
-        xcopy /E /Y /Q "%SCRIPT_DIR%skills\*" "%USERPROFILE%\.hermes\skills\" >nul 2>nul
+        xcopy /E /Y /Q "%SCRIPT_DIR%skills\*" "%HERMES_HOME%\skills\" >nul 2>nul
     )
 )
 echo [OK] Skills synced.

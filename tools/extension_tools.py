@@ -17,6 +17,7 @@ import logging
 import os
 from pathlib import Path
 
+from hermes_constants import get_hermes_home
 from tools.registry import registry
 
 logger = logging.getLogger(__name__)
@@ -25,13 +26,10 @@ _MUSIC_BASE = os.getenv("MUSIC_SERVER_URL", "http://localhost:9150").rstrip("/")
 _TTS_BASE = os.getenv("TTS_SERVER_URL", "http://localhost:8200").rstrip("/")
 _COMFYUI_BASE = os.getenv("COMFYUI_URL", "http://localhost:8188").rstrip("/")
 
-_HERMES_HOME = Path(os.getenv("HERMES_HOME", Path.home() / ".hermes"))
-_AUDIO_CACHE = _HERMES_HOME / "audio_cache"
-
-
 def _ensure_audio_cache() -> Path:
-    _AUDIO_CACHE.mkdir(parents=True, exist_ok=True)
-    return _AUDIO_CACHE
+    audio_cache = get_hermes_home() / "audio_cache"
+    audio_cache.mkdir(parents=True, exist_ok=True)
+    return audio_cache
 
 
 # ===========================================================================

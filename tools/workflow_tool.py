@@ -20,28 +20,47 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from hermes_constants import get_hermes_home
 from tools.registry import registry
 
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_WORKFLOW_DIR = _PROJECT_ROOT / "workflows"
+_LEGACY_WORKFLOW_DIR = _PROJECT_ROOT / "workflows"
+
+
+def _workflow_dir() -> Path:
+    """Return the active profile's update-safe workflow directory."""
+    return get_hermes_home() / "workflows"
 
 # In-memory cache of running workflow state
 _running_workflows: Dict[str, dict] = {}
 
 
 def _ensure_workflow_dir():
-    _WORKFLOW_DIR.mkdir(parents=True, exist_ok=True)
+    workflow_dir = _workflow_dir()
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+
+    # Older portable releases stored user workflows beside the application.
+    # Copy them forward once so portable or upstream updates cannot replace or
+    # hide user-created automations. Never overwrite an already-migrated file.
+    if _LEGACY_WORKFLOW_DIR.is_dir() and _LEGACY_WORKFLOW_DIR != workflow_dir:
+        for pattern in ("*.json", "*.yaml", "*.yml"):
+            for source in _LEGACY_WORKFLOW_DIR.glob(pattern):
+                destination = workflow_dir / source.name
+                if not destination.exists():
+                    shutil.copy2(source, destination)
 
 
 def _list_workflow_files() -> List[Path]:
     _ensure_workflow_dir()
-    files = list(_WORKFLOW_DIR.glob("*.json")) + list(_WORKFLOW_DIR.glob("*.yaml")) + list(_WORKFLOW_DIR.glob("*.yml"))
+    workflow_dir = _workflow_dir()
+    files = list(workflow_dir.glob("*.json")) + list(workflow_dir.glob("*.yaml")) + list(workflow_dir.glob("*.yml"))
     return sorted(files)
 
 
@@ -50,12 +69,13 @@ def _load_workflow(name: str) -> Optional[dict]:
     _ensure_workflow_dir()
 
     # Try JSON first, then YAML
-    json_path = _WORKFLOW_DIR / f"{name}.json"
+    workflow_dir = _workflow_dir()
+    json_path = workflow_dir / f"{name}.json"
     if json_path.exists():
         return json.loads(json_path.read_text(encoding="utf-8"))
 
     for ext in (".yaml", ".yml"):
-        yaml_path = _WORKFLOW_DIR / f"{name}{ext}"
+        yaml_path = workflow_dir / f"{name}{ext}"
         if yaml_path.exists():
             try:
                 import yaml
@@ -70,7 +90,7 @@ def _load_workflow(name: str) -> Optional[dict]:
 def _save_workflow(name: str, definition: dict):
     """Save a workflow definition."""
     _ensure_workflow_dir()
-    path = _WORKFLOW_DIR / f"{name}.json"
+    path = _workflow_dir() / f"{name}.json"
     path.write_text(
         json.dumps(definition, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -352,7 +372,7 @@ def workflow_create_handler(args: dict, **kwargs) -> str:
         "created": True,
         "name": name,
         "steps": len(steps),
-        "file": str(_WORKFLOW_DIR / f"{name}.json"),
+        "file": str(_workflow_dir() / f"{name}.json"),
     }, ensure_ascii=False)
 
 
@@ -408,7 +428,7 @@ def workflow_delete_handler(args: dict, **kwargs) -> str:
 
     deleted = False
     for ext in (".json", ".yaml", ".yml"):
-        path = _WORKFLOW_DIR / f"{name}{ext}"
+        path = _workflow_dir() / f"{name}{ext}"
         if path.exists():
             path.unlink()
             deleted = True

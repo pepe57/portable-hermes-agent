@@ -146,6 +146,13 @@ def test_divergent_merge_uses_upstream_tree_and_restores_portable_surface(
         )
         path.write_bytes(content)
         portable_source_contents[rel_path] = content
+    portable_tree_contents = {}
+    for rel_path in update_hermes_tool._PORTABLE_REQUIRED_TREE_FILES:
+        path = repo / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        content = f"portable-tree:{rel_path}\n".encode()
+        path.write_bytes(content)
+        portable_tree_contents[rel_path] = content
     (repo / "toolsets.py").write_text(
         '_HERMES_CORE_TOOLS = [\n    "terminal",\n]\n\n'
         "# Core toolset definitions\nTOOLSETS = {\n"
@@ -213,6 +220,8 @@ def test_divergent_merge_uses_upstream_tree_and_restores_portable_surface(
         assert (repo / rel_path).read_text(encoding="utf-8") == (
             portable_source_contents[rel_path].decode()
         )
+    for rel_path, content in portable_tree_contents.items():
+        assert (repo / rel_path).read_text(encoding="utf-8") == content.decode()
 
     toolsets = (repo / "toolsets.py").read_text(encoding="utf-8")
     assert all(
@@ -250,6 +259,10 @@ def test_zip_overlay_preserves_portable_runtime_and_source_paths():
     assert update_hermes_tool._is_preserved_overlay_path("extensions/demo")
     assert update_hermes_tool._is_preserved_overlay_path("python_embedded/python.exe")
     assert update_hermes_tool._is_preserved_overlay_path("tools/update_hermes_tool.py")
+    assert update_hermes_tool._is_preserved_overlay_path("gui/future_panel.py")
+    assert update_hermes_tool._is_preserved_overlay_path(
+        "skills/extensions/comfyui/SKILL.md"
+    )
     assert update_hermes_tool._is_preserved_overlay_path("tests/portable-policy.py")
     assert not update_hermes_tool._is_preserved_overlay_path("run_agent.py")
 
@@ -300,6 +313,8 @@ def test_upstream_zip_update_preserves_runtime_readme_and_portable_tools(
         "_PORTABLE_SOURCE_PATHS",
         {"README.md", "tools/update_hermes_tool.py"},
     )
+    monkeypatch.setattr(update_hermes_tool, "_PORTABLE_SOURCE_DIRS", set())
+    monkeypatch.setattr(update_hermes_tool, "_PORTABLE_REQUIRED_TREE_FILES", set())
     monkeypatch.setattr(
         update_hermes_tool, "urlopen", lambda *args, **kwargs: io.BytesIO(payload)
     )
@@ -330,6 +345,8 @@ def test_portable_surface_rejects_upstream_readme(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(update_hermes_tool, "_PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(update_hermes_tool, "_PORTABLE_SOURCE_PATHS", {"README.md"})
+    monkeypatch.setattr(update_hermes_tool, "_PORTABLE_SOURCE_DIRS", set())
+    monkeypatch.setattr(update_hermes_tool, "_PORTABLE_REQUIRED_TREE_FILES", set())
     monkeypatch.setattr(update_hermes_tool, "_CUSTOM_CORE_TOOLS", [])
     monkeypatch.setattr(update_hermes_tool, "_CUSTOM_TOOLSETS", {})
 
@@ -337,6 +354,36 @@ def test_portable_surface_rejects_upstream_readme(tmp_path, monkeypatch):
 
     assert ready is False
     assert status == "README.md is not the Portable Hermes Agent README"
+
+
+def test_portable_source_directories_are_snapshotted_and_restored(tmp_path, monkeypatch):
+    gui_file = tmp_path / "gui" / "future_panel.py"
+    skill_file = tmp_path / "skills" / "lm-studio" / "references" / "usage.md"
+    gui_file.parent.mkdir(parents=True)
+    skill_file.parent.mkdir(parents=True)
+    gui_file.write_bytes(b"portable gui\n")
+    skill_file.write_bytes(b"portable skill support\n")
+
+    monkeypatch.setattr(update_hermes_tool, "_PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(update_hermes_tool, "_PORTABLE_SOURCE_PATHS", set())
+    monkeypatch.setattr(
+        update_hermes_tool,
+        "_PORTABLE_SOURCE_DIRS",
+        {"gui", "skills/lm-studio"},
+    )
+
+    snapshot = update_hermes_tool._snapshot_portable_sources()
+    gui_file.unlink()
+    skill_file.write_bytes(b"upstream replacement\n")
+
+    restored = update_hermes_tool._restore_portable_sources(snapshot)
+
+    assert set(restored) == {
+        "gui/future_panel.py",
+        "skills/lm-studio/references/usage.md",
+    }
+    assert gui_file.read_bytes() == b"portable gui\n"
+    assert skill_file.read_bytes() == b"portable skill support\n"
 
 
 def test_update_tool_explicitly_targets_both_repositories():
