@@ -2,6 +2,7 @@ import importlib
 import queue
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def _bridge_shell(agent_bridge, tmp_path):
@@ -32,6 +33,71 @@ def test_portable_gui_modules_import():
     )
 
     assert all(importlib.import_module(module) for module in modules)
+
+
+def test_gui_startup_never_probes_lm_studio_on_tk_thread(monkeypatch):
+    """Network discovery starts later in Sidebar.refresh_models' worker thread."""
+    from gui import app
+
+    class FakeRoot:
+        def withdraw(self):
+            pass
+
+        def title(self, _value):
+            pass
+
+        def geometry(self, _value):
+            pass
+
+        def minsize(self, *_args):
+            pass
+
+        def deiconify(self):
+            pass
+
+        def after(self, *_args):
+            pass
+
+        def bind(self, *_args):
+            pass
+
+        def protocol(self, *_args):
+            pass
+
+    class FakeBridge:
+        _startup_fallback = False
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def _validate_startup_model(self):
+            raise AssertionError("startup must not perform the LM Studio network probe")
+
+        def get_model(self):
+            return "provider/model"
+
+        def _is_local_model(self, _model):
+            return False
+
+        def _is_model_configured(self):
+            return True
+
+    monkeypatch.setattr(app.tk, "Tk", FakeRoot)
+    monkeypatch.setattr(app, "AgentBridge", FakeBridge)
+    monkeypatch.setattr(app, "init_dpi_scaling", lambda _root: None)
+    monkeypatch.setattr(app, "apply_theme", lambda _root: None)
+    monkeypatch.setattr(app, "center_window", lambda *_args: None)
+    monkeypatch.setattr(app, "get_missing_keys", lambda: [])
+    monkeypatch.setattr(app.HermesGUI, "_build_menu", lambda _self: None)
+
+    def fake_layout(gui):
+        gui.status_bar = SimpleNamespace(set_model=lambda _model: None)
+        gui.sidebar = SimpleNamespace(set_model=lambda _model: None)
+
+    monkeypatch.setattr(app.HermesGUI, "_build_layout", fake_layout)
+    monkeypatch.setattr(app.HermesGUI, "_add_msg", lambda *_args: None)
+
+    app.HermesGUI()
 
 
 def test_gui_keeps_portable_branding_and_has_no_stale_version_label():
