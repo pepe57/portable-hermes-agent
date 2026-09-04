@@ -63,12 +63,14 @@ _PORTABLE_SOURCE_PATHS = {
     "UPDATE.bat",
     "hermes.bat",
     "hermes_gui.bat",
+    "hermes_gui.vbs",
     "install.bat",
     "scripts/install.cmd",
     "scripts/install.ps1",
     "scripts/install.sh",
     "docs/hermes-guide.md",
     "docs/Portable-Hermes-Agent-Manual.pdf",
+    "assets/SOUL.md",
     "tools/update_hermes_tool.py",
     "tools/run_python_tool.py",
     "tools/lm_studio_tools.py",
@@ -81,13 +83,41 @@ _PORTABLE_SOURCE_PATHS = {
     "tools/guide_tool.py",
 }
 
+# Portable-owned source trees must be preserved as trees.  Listing individual
+# files here previously let an upstream refresh silently delete every GUI file
+# except the launcher that happened to be named in _PORTABLE_SOURCE_PATHS.
+# Directory-level ownership also protects future GUI modules and portable skill
+# support files without requiring this allowlist to be updated for each file.
+_PORTABLE_SOURCE_DIRS = {
+    "gui",
+    "skills/extensions",
+    "skills/getting-started",
+    "skills/lm-studio",
+}
+
+_PORTABLE_REQUIRED_TREE_FILES = {
+    "gui/app.py",
+    "gui/agent_bridge.py",
+    "gui/theme.py",
+    "skills/extensions/comfyui/SKILL.md",
+    "skills/extensions/music-server/SKILL.md",
+    "skills/extensions/tts-server/SKILL.md",
+    "skills/getting-started/SKILL.md",
+    "skills/lm-studio/SKILL.md",
+}
+
 # Paths that belong to the portable distribution rather than upstream Hermes.
 # A divergent-history fallback replaces the tracked tree with upstream's tree,
 # then restores these paths from the pre-update portable commit before the
 # merge is finalized. Ignored runtime directories are never touched by
 # ``git read-tree``; the tracked policy/test trees need explicit restoration.
 _PORTABLE_GIT_PRESERVE_PATHS = tuple(
-    sorted(_PORTABLE_SOURCE_PATHS | _PORTABLE_RUNTIME_PATHS | {".github", "tests"})
+    sorted(
+        _PORTABLE_SOURCE_PATHS
+        | _PORTABLE_SOURCE_DIRS
+        | _PORTABLE_RUNTIME_PATHS
+        | {".github", "tests"}
+    )
 )
 
 _CUSTOM_CORE_TOOLS = [
@@ -333,6 +363,13 @@ def _snapshot_portable_sources() -> dict[str, bytes]:
         path = _PROJECT_ROOT / rel_path
         if path.is_file():
             snapshot[rel_path] = path.read_bytes()
+    for rel_dir in sorted(_PORTABLE_SOURCE_DIRS):
+        directory = _PROJECT_ROOT / rel_dir
+        if not directory.is_dir():
+            continue
+        for path in sorted(item for item in directory.rglob("*") if item.is_file()):
+            rel_path = path.relative_to(_PROJECT_ROOT).as_posix()
+            snapshot[rel_path] = path.read_bytes()
     return snapshot
 
 
@@ -423,6 +460,25 @@ def _portable_surface_is_ready() -> tuple[bool, str]:
     ]
     if missing_paths:
         return False, f"missing portable paths: {', '.join(sorted(missing_paths))}"
+
+    missing_dirs = [
+        rel_path
+        for rel_path in _PORTABLE_SOURCE_DIRS
+        if not (_PROJECT_ROOT / rel_path).is_dir()
+    ]
+    if missing_dirs:
+        return False, f"missing portable directories: {', '.join(sorted(missing_dirs))}"
+
+    missing_tree_files = [
+        rel_path
+        for rel_path in _PORTABLE_REQUIRED_TREE_FILES
+        if not (_PROJECT_ROOT / rel_path).is_file()
+    ]
+    if missing_tree_files:
+        return False, (
+            "incomplete portable directories: "
+            + ", ".join(sorted(missing_tree_files))
+        )
 
     readme_path = _PROJECT_ROOT / "README.md"
     readme = readme_path.read_text(encoding="utf-8")
@@ -527,6 +583,11 @@ def _finish_divergent_upstream_merge(
 def _is_preserved_overlay_path(rel_path: str) -> bool:
     norm = rel_path.replace("\\", "/")
     if norm in _PORTABLE_RUNTIME_PATHS or norm in _PORTABLE_SOURCE_PATHS:
+        return True
+    if any(
+        norm == rel_dir or norm.startswith(rel_dir.rstrip("/") + "/")
+        for rel_dir in _PORTABLE_SOURCE_DIRS
+    ):
         return True
     first = norm.split("/", 1)[0]
     return first in _PORTABLE_RUNTIME_DIRS

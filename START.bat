@@ -4,6 +4,7 @@ title Portable Hermes Agent
 
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_EXE=%SCRIPT_DIR%python_embedded\python.exe"
+if not defined HERMES_HOME set "HERMES_HOME=%USERPROFILE%\.hermes"
 
 :: ============================================
 ::   First-time setup check
@@ -50,13 +51,7 @@ echo.
 
 :: Check if GUI is available
 if exist "%SCRIPT_DIR%gui\app.py" (
-    set "PATH=%SCRIPT_DIR%python_embedded;%SCRIPT_DIR%python_embedded\Scripts;%PATH%"
-    set "PIP_TARGET=%SCRIPT_DIR%python_embedded\Lib\site-packages"
-    set "PYTHONPATH=%SCRIPT_DIR%python_embedded\Lib\site-packages"
-    set "PYTHONIOENCODING=utf-8"
-    chcp 65001 >nul 2>&1
-    cd /d "%SCRIPT_DIR%"
-    "%PYTHON_EXE%" -c "from gui.app import main; main()"
+    call "%SCRIPT_DIR%hermes_gui.bat" %*
 ) else (
     call "%SCRIPT_DIR%hermes.bat"
 )

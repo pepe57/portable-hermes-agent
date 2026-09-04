@@ -4,6 +4,7 @@ setlocal enabledelayedexpansion
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_DIR=%SCRIPT_DIR%python_embedded"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
+if not defined HERMES_HOME set "HERMES_HOME=%USERPROFILE%\.hermes"
 
 :: Handle commands
 if /i "%~1"=="setup" (
@@ -52,25 +53,28 @@ if not exist "%PYTHON_EXE%" (
     goto :eof
 )
 
-:: Auto-create .env from template if missing
-if not exist "%SCRIPT_DIR%.env" (
-    if exist "%SCRIPT_DIR%.env.example" (
-        copy "%SCRIPT_DIR%.env.example" "%SCRIPT_DIR%.env" >nul
+:: Create the selected Hermes home and migrate older portable-root config.
+if not exist "%HERMES_HOME%" mkdir "%HERMES_HOME%"
+if not exist "%HERMES_HOME%\.env" (
+    if exist "%SCRIPT_DIR%.env" (
+        copy "%SCRIPT_DIR%.env" "%HERMES_HOME%\.env" >nul
+    ) else if exist "%SCRIPT_DIR%.env.example" (
+        copy "%SCRIPT_DIR%.env.example" "%HERMES_HOME%\.env" >nul
     )
 )
 
-:: Auto-create cli-config.yaml from template if missing
-if not exist "%SCRIPT_DIR%cli-config.yaml" (
-    if exist "%SCRIPT_DIR%cli-config.yaml.example" (
-        copy "%SCRIPT_DIR%cli-config.yaml.example" "%SCRIPT_DIR%cli-config.yaml" >nul
+if not exist "%HERMES_HOME%\config.yaml" (
+    if exist "%SCRIPT_DIR%cli-config.yaml" (
+        copy "%SCRIPT_DIR%cli-config.yaml" "%HERMES_HOME%\config.yaml" >nul
+    ) else if exist "%SCRIPT_DIR%cli-config.yaml.example" (
+        copy "%SCRIPT_DIR%cli-config.yaml.example" "%HERMES_HOME%\config.yaml" >nul
     )
 )
 
-:: Create ~/.hermes and copy default personality if missing
-if not exist "%USERPROFILE%\.hermes" mkdir "%USERPROFILE%\.hermes"
-if not exist "%USERPROFILE%\.hermes\SOUL.md" (
+:: Copy the default personality if missing.
+if not exist "%HERMES_HOME%\SOUL.md" (
     if exist "%SCRIPT_DIR%assets\SOUL.md" (
-        copy "%SCRIPT_DIR%assets\SOUL.md" "%USERPROFILE%\.hermes\SOUL.md" >nul
+        copy "%SCRIPT_DIR%assets\SOUL.md" "%HERMES_HOME%\SOUL.md" >nul
     )
 )
 
@@ -87,7 +91,6 @@ set "PATH=%PYTHON_DIR%;%PYTHON_DIR%\Scripts;%SCRIPT_DIR%node_modules\.bin;%PATH%
 
 :: Lock pip installs to portable Python
 set "PIP_TARGET=%PYTHON_DIR%\Lib\site-packages"
-set "PIP_PREFIX=%PYTHON_DIR%"
 set "PYTHONPATH=%PYTHON_DIR%\Lib\site-packages"
 
 :: Expose portable Python path so tools and the agent can find it
