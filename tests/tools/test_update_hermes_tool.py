@@ -261,7 +261,7 @@ def test_zip_overlay_preserves_portable_runtime_and_source_paths():
     assert update_hermes_tool._is_preserved_overlay_path("tools/update_hermes_tool.py")
     assert update_hermes_tool._is_preserved_overlay_path("gui/future_panel.py")
     assert update_hermes_tool._is_preserved_overlay_path(
-        "skills/extensions/comfyui/SKILL.md"
+        "skills/extensions/portable-comfyui/SKILL.md"
     )
     assert update_hermes_tool._is_preserved_overlay_path("tests/portable-policy.py")
     assert not update_hermes_tool._is_preserved_overlay_path("run_agent.py")

@@ -30,6 +30,8 @@ set "PYTHON_VERSION=3.13.12"
 set "PYTHON_URL=https://www.python.org/ftp/python/3.13.12/python-3.13.12-embed-amd64.zip"
 set "PYTHON_ZIP=%SCRIPT_DIR%python_embedded.zip"
 set "TCLTK_URL=https://www.python.org/ftp/python/3.13.12/amd64/tcltk.msi"
+set "TCLTK_MSI=%SCRIPT_DIR%tcltk.msi"
+set "TCLTK_TEMP=%SCRIPT_DIR%_tcltk_temp"
 
 :: ============================================
 :: Step 1: Download Embedded Python
@@ -109,14 +111,16 @@ if %errorlevel% neq 0 (
 :: ============================================
 echo [STEP 4/10] Installing build tools...
 "%PYTHON_EXE%" -m pip install setuptools wheel --quiet 2>nul
+if errorlevel 1 (
+    echo ERROR: Failed to install Python build tools.
+    exit /b 1
+)
 
 :: ============================================
 :: Step 5: Install Tkinter (GUI support)
 :: ============================================
 if not exist "%PYTHON_DIR%\Lib\tkinter" (
     echo [STEP 5/10] Installing Tkinter GUI support...
-    set "TCLTK_MSI=%SCRIPT_DIR%tcltk.msi"
-    set "TCLTK_TEMP=%SCRIPT_DIR%_tcltk_temp"
 
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;" ^
@@ -128,7 +132,7 @@ if not exist "%PYTHON_DIR%\Lib\tkinter" (
         :: "start /wait msiexec /a" can return before extraction completes on
         :: Windows 11 Enterprise with restrictive Group Policy, leaving DLLs absent.
         powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-            "Start-Process msiexec.exe -ArgumentList '/a','\"!TCLTK_MSI!\"','/qn','TARGETDIR=\"!TCLTK_TEMP!\"' -Wait -NoNewWindow"
+            "$p = Start-Process msiexec.exe -ArgumentList '/a','\"!TCLTK_MSI!\"','/qn','TARGETDIR=\"!TCLTK_TEMP!\"' -Wait -WindowStyle Hidden -PassThru; if ($p.ExitCode -ne 0) { exit $p.ExitCode }"
         if exist "!TCLTK_TEMP!\DLLs" (
             xcopy /E /Y /Q "!TCLTK_TEMP!\DLLs\*" "%PYTHON_DIR%\DLLs\" >nul 2>nul
             copy /Y "!TCLTK_TEMP!\DLLs\*.dll" "%PYTHON_DIR%\" >nul 2>nul
@@ -139,15 +143,26 @@ if not exist "%PYTHON_DIR%\Lib\tkinter" (
             xcopy /E /Y /Q "!TCLTK_TEMP!\libs\*" "%PYTHON_DIR%\libs\" >nul 2>nul
             echo [OK] Tkinter installed.
         ) else (
-            echo [WARN] Tkinter extraction failed - GUI may not work.
+            echo ERROR: Tkinter extraction failed.
+            del "!TCLTK_MSI!" 2>nul
+            exit /b 1
         )
         rmdir /S /Q "!TCLTK_TEMP!" 2>nul
         del "!TCLTK_MSI!" 2>nul
     ) else (
-        echo [WARN] Could not download Tkinter - GUI may not work.
+        echo ERROR: Could not download Tkinter.
+        exit /b 1
     )
 ) else (
     echo [OK] Tkinter already installed.
+)
+
+set "TCL_LIBRARY=%PYTHON_DIR%\tcl\tcl8.6"
+set "TK_LIBRARY=%PYTHON_DIR%\tcl\tk8.6"
+"%PYTHON_EXE%" -c "import tkinter; tkinter.Tcl()" >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Embedded Python cannot load Tkinter after installation.
+    exit /b 1
 )
 
 :: ============================================
@@ -184,6 +199,10 @@ echo        (this may take several minutes on first run)
 "%PYTHON_EXE%" -m pip install -e "%SCRIPT_DIR%." --quiet 2>nul
 if errorlevel 1 (
     "%PYTHON_EXE%" -m pip install -r "%SCRIPT_DIR%requirements.txt" --quiet 2>nul
+    if errorlevel 1 (
+        echo ERROR: Failed to install required Python dependencies.
+        exit /b 1
+    )
 )
 
 :: Guarantee the project root is on sys.path regardless of editable-install outcome.
@@ -197,6 +216,9 @@ if not exist "!PTH_FILE!" (
 
 :: All optional extras
 "%PYTHON_EXE%" -m pip install -e "%SCRIPT_DIR%.[messaging,cron,cli,mcp,honcho,pty,tts-premium,homeassistant]" --quiet 2>nul
+if errorlevel 1 (
+    echo [WARN] Some optional integrations could not be installed.
+)
 
 :: Mini-swe-agent
 if exist "%SCRIPT_DIR%mini-swe-agent\pyproject.toml" (
@@ -205,6 +227,10 @@ if exist "%SCRIPT_DIR%mini-swe-agent\pyproject.toml" (
 
 :: Extra packages needed for Windows GUI
 "%PYTHON_EXE%" -m pip install Pillow ddgs lmstudio --quiet 2>nul
+if errorlevel 1 (
+    echo ERROR: Failed to install required Windows GUI packages.
+    exit /b 1
+)
 
 echo [OK] Python dependencies installed.
 
@@ -212,17 +238,31 @@ echo [OK] Python dependencies installed.
 :: Step 8: Node.js dependencies
 :: ============================================
 echo [STEP 8/10] Installing Node.js dependencies...
-where node >nul 2>&1
-if %errorlevel% equ 0 (
-    if exist "%SCRIPT_DIR%package.json" (
-        cd /d "%SCRIPT_DIR%"
-        npm install --quiet 2>nul
-        echo [OK] Node.js dependencies installed.
-    )
-) else (
-    echo [INFO] Node.js not found - browser tools and WhatsApp bridge won't be available.
-    echo        Install Node.js from https://nodejs.org/ and re-run this installer.
-)
+echo        Provisioning a portable Hermes-managed Node.js runtime...
+set "NPM_PATH_FILE=%SCRIPT_DIR%.portable_npm_path.tmp"
+"%PYTHON_EXE%" -c "from pathlib import Path; from hermes_constants import bootstrap_hermes_managed_node; Path(r'%NPM_PATH_FILE%').write_text(bootstrap_hermes_managed_node() or '', encoding='utf-8')" 2>nul
+set "NPM_CMD="
+if exist "%NPM_PATH_FILE%" set /p "NPM_CMD="<"%NPM_PATH_FILE%"
+del "%NPM_PATH_FILE%" 2>nul
+if not defined NPM_CMD goto :node_install_failed
+if not exist "%NPM_CMD%" goto :node_install_failed
+for %%I in ("%NPM_CMD%") do set "MANAGED_NODE_DIR=%%~dpI"
+set "PATH=%MANAGED_NODE_DIR%;%PATH%"
+cd /d "%SCRIPT_DIR%"
+call "%NPM_CMD%" install --quiet 2>nul
+if errorlevel 1 goto :node_dependencies_failed
+echo [OK] Portable Node.js dependencies installed.
+goto :node_install_complete
+
+:node_install_failed
+echo ERROR: Could not provision the portable Node.js runtime.
+exit /b 1
+
+:node_dependencies_failed
+echo ERROR: Failed to install Node.js dependencies.
+exit /b 1
+
+:node_install_complete
 
 :: ============================================
 :: Step 9: Environment and config files
@@ -282,6 +322,21 @@ if errorlevel 1 (
     )
 )
 echo [OK] Skills synced.
+
+:: ============================================
+:: Final verification - never claim success for a partial install
+:: ============================================
+echo [VERIFY] Checking embedded GUI, profile, and portable skills...
+"%PYTHON_EXE%" -c "import os, tkinter; from pathlib import Path; import gui.app, hermes_cli; tkinter.Tcl(); h=Path(os.environ['HERMES_HOME']); required=['.env','config.yaml','permissions.json','SOUL.md','node/node.exe','node/npm.cmd','skills/getting-started/SKILL.md','skills/lm-studio/SKILL.md','skills/extensions/portable-comfyui/SKILL.md','skills/extensions/music-server/SKILL.md','skills/extensions/tts-server/SKILL.md']; missing=[p for p in required if not (h/p).is_file()]; assert not missing, 'missing profile files: '+', '.join(missing)" >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Installation verification failed. Run install.bat again to repair it.
+    exit /b 1
+)
+if not exist "%SCRIPT_DIR%node_modules\.package-lock.json" (
+    echo ERROR: Node.js dependency verification failed. Run install.bat again to repair it.
+    exit /b 1
+)
+echo [OK] Embedded GUI, profile, and portable skills verified.
 
 :: ============================================
 :: Done!

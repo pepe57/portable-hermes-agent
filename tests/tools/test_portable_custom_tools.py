@@ -78,7 +78,9 @@ def test_extension_skill_ports_match_portable_runtime():
     tts_skill = (REPO_ROOT / "skills/extensions/tts-server/SKILL.md").read_text(
         encoding="utf-8"
     )
-    comfyui_skill = (REPO_ROOT / "skills/extensions/comfyui/SKILL.md").read_text(
+    comfyui_skill = (
+        REPO_ROOT / "skills/extensions/portable-comfyui/SKILL.md"
+    ).read_text(
         encoding="utf-8"
     )
 

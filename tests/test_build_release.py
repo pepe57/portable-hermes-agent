@@ -35,7 +35,7 @@ def test_tracked_release_inventory_contains_complete_portable_surface():
         "gui/permissions.py",
         "gui/permissions_panel.py",
         "gui/theme.py",
-        "skills/extensions/comfyui/SKILL.md",
+        "skills/extensions/portable-comfyui/SKILL.md",
         "skills/extensions/music-server/SKILL.md",
         "skills/extensions/tts-server/SKILL.md",
         "skills/getting-started/SKILL.md",
@@ -95,6 +95,44 @@ def test_windows_launchers_keep_runtime_state_in_active_hermes_home():
 
     for launcher in (start, cli_launcher, gui_launcher, updater):
         assert 'set "PIP_PREFIX=' not in launcher
+
+
+def test_windows_installer_fails_closed_instead_of_finishing_partial_setup():
+    installer = (Path(build_release.PROJECT_ROOT) / "install.bat").read_text(
+        encoding="utf-8"
+    )
+
+    # Variables referenced with percent expansion inside a parenthesized block
+    # must be assigned before that block is parsed.
+    assert installer.index('set "TCLTK_MSI=') < installer.index(
+        'if not exist "%PYTHON_DIR%\\Lib\\tkinter" ('
+    )
+
+    # npm is a .cmd shim on Windows. Without CALL it terminates install.bat and
+    # silently skips profile creation, skill sync, and the success/failure gate.
+    assert 'from hermes_constants import bootstrap_hermes_managed_node' in installer
+    assert 'call "%NPM_CMD%" install --quiet' in installer
+    assert "\n        npm install --quiet" not in installer
+
+    # Success is conditional on the real embedded runtime and portable profile
+    # surface, not just on individual download commands returning.
+    assert 'import os, tkinter; from pathlib import Path; import gui.app, hermes_cli' in installer
+    assert "skills/getting-started/SKILL.md" in installer
+    assert "skills/extensions/tts-server/SKILL.md" in installer
+    assert "Installation verification failed" in installer
+
+
+def test_portable_comfyui_skill_does_not_collide_with_upstream_skill():
+    root = Path(build_release.PROJECT_ROOT)
+    portable = (root / "skills/extensions/portable-comfyui/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    upstream = (root / "skills/creative/comfyui/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "\nname: portable-comfyui\n" in portable
+    assert "\nname: comfyui\n" in upstream
 
 
 def test_release_zip_excludes_development_only_dirs():

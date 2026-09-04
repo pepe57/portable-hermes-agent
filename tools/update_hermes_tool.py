@@ -99,7 +99,7 @@ _PORTABLE_REQUIRED_TREE_FILES = {
     "gui/app.py",
     "gui/agent_bridge.py",
     "gui/theme.py",
-    "skills/extensions/comfyui/SKILL.md",
+    "skills/extensions/portable-comfyui/SKILL.md",
     "skills/extensions/music-server/SKILL.md",
     "skills/extensions/tts-server/SKILL.md",
     "skills/getting-started/SKILL.md",

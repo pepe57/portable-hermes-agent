@@ -116,7 +116,7 @@ Or run:
 hermes.bat update --backup --yes
 ```
 
-This updates from `aivrar/portable-hermes-agent`, makes a backup when requested, and preserves runtime folders such as `.hermes/`, `.hermes/custom_tools/`, `.hermes/extensions/`, `extensions/`, and `python_embedded/`.
+This updates from `aivrar/portable-hermes-agent`, makes a backup when requested, and preserves runtime folders such as `.hermes/`, `.hermes/custom_tools/`, `.hermes/extensions/`, `extensions/`, and `python_embedded/`. The portable Node.js runtime is stored under `HERMES_HOME/node/`, so it also survives both update types without modifying a system Node installation.
 
 If you also want newer upstream Hermes code, start Hermes after the Portable update and ask:
 
