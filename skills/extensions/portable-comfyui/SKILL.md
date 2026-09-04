@@ -1,5 +1,5 @@
 ---
-name: comfyui
+name: portable-comfyui
 description: Generate and manage images with portable ComfyUI.
 version: "1.0"
 author: aivrar
